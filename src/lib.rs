@@ -2,7 +2,7 @@
 //! so they may be accessed as a slice.
 #![warn(missing_docs)]
 
-use std::collections::BTreeMap;
+use std::{borrow::Borrow, collections::BTreeMap};
 
 mod key;
 pub use key::Key;
@@ -64,14 +64,16 @@ impl<K: Key, V> ContiguousMap<K, V> {
     }
 
     /// Returns a reference to a key's value, if it exists.
-    pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
-        let entry = self.map.range(..=key.clone()).next_back()?;
+    pub fn get<'a, KB: Borrow<K>>(&'a self, key: KB) -> Option<&'a V> {
+        let key = key.borrow();
+        let entry = self.map.range(..=key).next_back()?;
         let index = key.difference(entry.0)?;
         entry.1.get(index)
     }
 
     /// Returns a mutable reference to a key's value, if it exists.
-    pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
+    pub fn get_mut<'a, KB: Borrow<K>>(&'a mut self, key: KB) -> Option<&'a mut V> {
+        let key = key.borrow();
         let entry = self.map.range_mut(..=key.clone()).next_back()?;
         let index = key.difference(entry.0)?;
         entry.1.get_mut(index)
@@ -182,9 +184,9 @@ mod test {
         map.insert(4, 14);
         map.insert(9, 19);
         assert_eq!(Some(&12), map.get(&2));
-        assert_eq!(Some(&13), map.get(&3));
+        assert_eq!(Some(&13), map.get(3));
         assert_eq!(Some(&14), map.get(&4));
-        assert_eq!(Some(&19), map.get(&9));
+        assert_eq!(Some(&19), map.get(9));
     }
 
     #[test]
@@ -206,9 +208,9 @@ mod test {
         map.insert(4, 14);
         map.insert(9, 19);
         assert_eq!(Some(&mut 12), map.get_mut(&2));
-        assert_eq!(Some(&mut 13), map.get_mut(&3));
+        assert_eq!(Some(&mut 13), map.get_mut(3));
         assert_eq!(Some(&mut 14), map.get_mut(&4));
-        assert_eq!(Some(&mut 19), map.get_mut(&9));
+        assert_eq!(Some(&mut 19), map.get_mut(9));
     }
 
     #[test]
