@@ -12,7 +12,7 @@ pub use range_bounds::InclusiveStartRangeBounds;
 /// An ordered, associative container like [`std::collections::BTreeMap`].
 /// Additionally stores values with adjacent keys contiguously so they may
 /// be accessed as a slice.
-pub struct ContiguousMap<K: key::Key, V> {
+pub struct ContiguousMap<K: Key, V> {
     map: BTreeMap<K, Vec<V>>,
 }
 
@@ -28,7 +28,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
     /// Returns the old value for this key if one existed.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         // attempt to find an already existing insertion point
-        if let Some(insertion_entry) = self.map.range_mut(..=key.clone()).next_back() {
+        if let Some(insertion_entry) = self.map.range_mut(..=&key).next_back() {
             if let Some(index) = key.difference(&insertion_entry.0) {
                 if index < insertion_entry.1.len() {
                     // inserting into the insertion_entry
@@ -76,7 +76,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
     /// Returns a mutable reference to a key's value, if it exists.
     pub fn get_mut<'a, KB: Borrow<K>>(&'a mut self, key: KB) -> Option<&'a mut V> {
         let key = key.borrow();
-        let entry = self.map.range_mut(..=key.clone()).next_back()?;
+        let entry = self.map.range_mut(..=key).next_back()?;
         let index = key.difference(entry.0)?;
         entry.1.get_mut(index)
     }
