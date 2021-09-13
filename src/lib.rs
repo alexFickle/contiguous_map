@@ -6,6 +6,8 @@ use std::{borrow::Borrow, collections::BTreeMap};
 
 mod key;
 pub use key::Key;
+mod range_bounds;
+pub use range_bounds::InclusiveStartRangeBounds;
 
 /// An ordered, associative container like [`std::collections::BTreeMap`].
 /// Additionally stores values with adjacent keys contiguously so they may
@@ -77,6 +79,78 @@ impl<K: Key, V> ContiguousMap<K, V> {
         let entry = self.map.range_mut(..=key.clone()).next_back()?;
         let index = key.difference(entry.0)?;
         entry.1.get_mut(index)
+    }
+
+    /// Gets a slice from this map using a range of keys.
+    pub fn get_slice<R: InclusiveStartRangeBounds<K>>(&self, range: R) -> Option<&[V]> {
+        let entry = self.map.range(..=range.start_bound()).next_back()?;
+        let offset = range.start_bound().difference(entry.0)?;
+        let slice = if offset < entry.1.len() {
+            &entry.1[offset..]
+        } else {
+            return None;
+        };
+        use std::ops::Bound;
+        let length = match range.end_bound() {
+            Bound::Unbounded => slice.len(),
+            Bound::Excluded(end) => end.difference(range.start_bound())?,
+            Bound::Included(inclusive_end) => inclusive_end
+                .difference(range.start_bound())?
+                .checked_add(1)?,
+        };
+        slice.chunks_exact(length).next()
+    }
+
+    /// Gets a slice from this map using a key and a length.
+    pub fn get_slice_with_len<KB: Borrow<K>>(&self, key: KB, len: usize) -> Option<&[V]> {
+        self.get_slice(key.borrow()..)
+            .map(|slice| slice.chunks_exact(len).next())
+            .flatten()
+    }
+
+    /// Gets a mutable slice from this map using a range of keys.
+    pub fn get_slice_mut<R: InclusiveStartRangeBounds<K>>(&mut self, range: R) -> Option<&mut [V]> {
+        let entry = self.map.range_mut(..=range.start_bound()).next_back()?;
+        let offset = range.start_bound().difference(entry.0)?;
+        let slice = if offset < entry.1.len() {
+            &mut entry.1[offset..]
+        } else {
+            return None;
+        };
+        use std::ops::Bound;
+        let length = match range.end_bound() {
+            Bound::Unbounded => slice.len(),
+            Bound::Excluded(end) => end.difference(range.start_bound())?,
+            Bound::Included(inclusive_end) => inclusive_end
+                .difference(range.start_bound())?
+                .checked_add(1)?,
+        };
+        slice.chunks_exact_mut(length).next()
+    }
+
+    /// Gets a mutable slice from this map using a key and a length.
+    pub fn get_slice_with_len_mut<KB: Borrow<K>>(
+        &mut self,
+        key: KB,
+        len: usize,
+    ) -> Option<&mut [V]> {
+        self.get_slice_mut(key.borrow()..)
+            .map(|slice| slice.chunks_exact_mut(len).next())
+            .flatten()
+    }
+}
+
+impl<K: Key, V: Clone> ContiguousMap<K, V> {
+    /// Inserts values into the map from a slice starting at a given key.
+    pub fn insert_slice(&mut self, start_key: K, values: &[V]) {
+        let mut key = start_key;
+        for value in values.iter().cloned() {
+            self.insert(key.clone(), value);
+            key = match key.add_one() {
+                Some(k) => k,
+                None => return,
+            };
+        }
     }
 }
 
@@ -222,5 +296,132 @@ mod test {
         assert_eq!(None, map.get_mut(&0));
         assert_eq!(None, map.get_mut(&2));
         assert_eq!(None, map.get_mut(&4));
+    }
+
+    #[test]
+    fn insert_slice() {
+        let mut map = ContiguousMap::new();
+        map.insert_slice(3, &[1, 2, 3]);
+        assert_map_same(&map, [(3, vec![1, 2, 3])]);
+    }
+
+    #[test]
+    fn get_slice_with_range() {
+        let map = {
+            let mut map = ContiguousMap::<usize, usize>::new();
+            map.insert_slice(3, &[1, 2, 3]);
+            map
+        };
+
+        assert_eq!(None, map.get_slice(2..4));
+        assert_eq!(None, map.get_slice(2..6));
+        assert_eq!(None, map.get_slice(3..7));
+        assert_eq!([1, 2, 3], map.get_slice(3..6).unwrap());
+        assert_eq!([2, 3], map.get_slice(4..6).unwrap());
+        assert_eq!([3], map.get_slice(5..6).unwrap());
+        assert_eq!([1, 2], map.get_slice(3..5).unwrap());
+    }
+
+    #[test]
+    fn get_slice_with_range_inclusive() {
+        let map = {
+            let mut map = ContiguousMap::<usize, usize>::new();
+            map.insert_slice(3, &[1, 2, 3]);
+            map
+        };
+
+        assert_eq!(None, map.get_slice(2..=3));
+        assert_eq!(None, map.get_slice(2..=5));
+        assert_eq!(None, map.get_slice(3..=6));
+        assert_eq!([1, 2, 3], map.get_slice(3..=5).unwrap());
+        assert_eq!([2, 3], map.get_slice(4..=5).unwrap());
+        assert_eq!([3], map.get_slice(5..=5).unwrap());
+        assert_eq!([1, 2], map.get_slice(3..=4).unwrap());
+    }
+
+    #[test]
+    fn get_slice_with_range_from() {
+        let map = {
+            let mut map = ContiguousMap::<usize, usize>::new();
+            map.insert_slice(3, &[1, 2, 3]);
+            map
+        };
+
+        assert_eq!(None, map.get_slice(2..));
+        assert_eq!([1, 2, 3], map.get_slice(3..).unwrap());
+        assert_eq!([2, 3], map.get_slice(4..).unwrap());
+        assert_eq!([3], map.get_slice(5..).unwrap());
+        assert_eq!(None, map.get_slice(6..));
+    }
+
+    #[test]
+    fn get_slice_with_len() {
+        let map = {
+            let mut map = ContiguousMap::<usize, usize>::new();
+            map.insert_slice(3, &[1, 2, 3]);
+            map
+        };
+
+        assert_eq!(None, map.get_slice_with_len(2, 2));
+        assert_eq!(None, map.get_slice_with_len(2, 4));
+        assert_eq!(None, map.get_slice_with_len(3, 4));
+        assert_eq!([1, 2, 3], map.get_slice_with_len(3, 3).unwrap());
+        assert_eq!([2, 3], map.get_slice_with_len(4, 2).unwrap());
+        assert_eq!([3], map.get_slice_with_len(5, 1).unwrap());
+        assert_eq!([1, 2], map.get_slice_with_len(3, 2).unwrap());
+    }
+
+    #[test]
+    fn get_slice_mut_with_range() {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+
+        assert_eq!(None, map.get_slice_mut(2..4));
+        assert_eq!(None, map.get_slice_mut(2..6));
+        assert_eq!(None, map.get_slice_mut(3..7));
+        assert_eq!([1, 2, 3], map.get_slice_mut(3..6).unwrap());
+        assert_eq!([2, 3], map.get_slice_mut(4..6).unwrap());
+        assert_eq!([3], map.get_slice_mut(5..6).unwrap());
+        assert_eq!([1, 2], map.get_slice_mut(3..5).unwrap());
+    }
+
+    #[test]
+    fn get_slice_mut_with_range_inclusive() {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+
+        assert_eq!(None, map.get_slice_mut(2..=3));
+        assert_eq!(None, map.get_slice_mut(2..=5));
+        assert_eq!(None, map.get_slice_mut(3..=6));
+        assert_eq!([1, 2, 3], map.get_slice_mut(3..=5).unwrap());
+        assert_eq!([2, 3], map.get_slice_mut(4..=5).unwrap());
+        assert_eq!([3], map.get_slice_mut(5..=5).unwrap());
+        assert_eq!([1, 2], map.get_slice_mut(3..=4).unwrap());
+    }
+
+    #[test]
+    fn get_slice_mut_with_range_from() {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+
+        assert_eq!(None, map.get_slice_mut(2..));
+        assert_eq!([1, 2, 3], map.get_slice_mut(3..).unwrap());
+        assert_eq!([2, 3], map.get_slice_mut(4..).unwrap());
+        assert_eq!([3], map.get_slice_mut(5..).unwrap());
+        assert_eq!(None, map.get_slice_mut(6..));
+    }
+
+    #[test]
+    fn get_slice_with_len_mut() {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+
+        assert_eq!(None, map.get_slice_with_len_mut(2, 2));
+        assert_eq!(None, map.get_slice_with_len_mut(2, 4));
+        assert_eq!(None, map.get_slice_with_len_mut(3, 4));
+        assert_eq!([1, 2, 3], map.get_slice_with_len_mut(3, 3).unwrap());
+        assert_eq!([2, 3], map.get_slice_with_len_mut(4, 2).unwrap());
+        assert_eq!([3], map.get_slice_with_len_mut(5, 1).unwrap());
+        assert_eq!([1, 2], map.get_slice_with_len_mut(3, 2).unwrap());
     }
 }
