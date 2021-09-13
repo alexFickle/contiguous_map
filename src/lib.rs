@@ -29,26 +29,33 @@ impl<K: Key, V> ContiguousMap<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         // attempt to find an already existing insertion point
         if let Some(insertion_entry) = self.map.range_mut(..=&key).next_back() {
-            if let Some(index) = key.difference(&insertion_entry.0) {
-                if index < insertion_entry.1.len() {
-                    // inserting into the insertion_entry
-                    let mut value = value;
-                    std::mem::swap(&mut value, &mut insertion_entry.1[index]);
-                    return Some(value);
-                } else if index == insertion_entry.1.len() {
-                    // appending to the insertion_entry
-                    insertion_entry.1.push(value);
-                    // might need to merge with the next entry in the map
-                    if let Some(one_after_key) = key.add_one() {
-                        let extend_to_key = insertion_entry.0.clone();
-                        if let Some(append_values) = self.map.remove(&one_after_key) {
-                            self.map
-                                .get_mut(&extend_to_key)
-                                .unwrap()
-                                .extend(append_values);
-                        }
+            if let Some(index) = key.difference(insertion_entry.0) {
+                use std::cmp::Ordering;
+                match index.cmp(&insertion_entry.1.len()) {
+                    Ordering::Less => {
+                        // overwriting a value in insertion_entry
+                        let mut value = value;
+                        std::mem::swap(&mut value, &mut insertion_entry.1[index]);
+                        return Some(value);
                     }
-                    return None;
+                    Ordering::Equal => {
+                        // appending to insertion_entry
+                        insertion_entry.1.push(value);
+                        // might need to merge with the next entry in the map
+                        if let Some(one_after_key) = key.add_one() {
+                            let extend_to_key = insertion_entry.0.clone();
+                            if let Some(append_values) = self.map.remove(&one_after_key) {
+                                self.map
+                                    .get_mut(&extend_to_key)
+                                    .expect("lookup with key cloned from entry in map")
+                                    .extend(append_values);
+                            }
+                        }
+                        return None;
+                    }
+                    Ordering::Greater => {
+                        // insertion_entry can not contain our key due to gap
+                    }
                 }
             }
         }
@@ -66,7 +73,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
     }
 
     /// Returns a reference to a key's value, if it exists.
-    pub fn get<'a, KB: Borrow<K>>(&'a self, key: KB) -> Option<&'a V> {
+    pub fn get<KB: Borrow<K>>(&self, key: KB) -> Option<&V> {
         let key = key.borrow();
         let entry = self.map.range(..=key).next_back()?;
         let index = key.difference(entry.0)?;
@@ -74,7 +81,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
     }
 
     /// Returns a mutable reference to a key's value, if it exists.
-    pub fn get_mut<'a, KB: Borrow<K>>(&'a mut self, key: KB) -> Option<&'a mut V> {
+    pub fn get_mut<KB: Borrow<K>>(&mut self, key: KB) -> Option<&mut V> {
         let key = key.borrow();
         let entry = self.map.range_mut(..=key).next_back()?;
         let index = key.difference(entry.0)?;
@@ -151,6 +158,12 @@ impl<K: Key, V: Clone> ContiguousMap<K, V> {
                 None => return,
             };
         }
+    }
+}
+
+impl<K: Key, V> Default for ContiguousMap<K, V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

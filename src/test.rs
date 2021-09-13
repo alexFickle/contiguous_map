@@ -40,6 +40,11 @@ fn new() {
 }
 
 #[test]
+fn default() {
+    assert_map_same(&Default::default(), []);
+}
+
+#[test]
 fn insert_into_empty() {
     let mut map = ContiguousMap::new();
     assert!(map.insert(1, 2).is_none());
