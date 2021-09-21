@@ -72,6 +72,21 @@ impl<K: Key, V> ContiguousMap<K, V> {
         None
     }
 
+    /// Inserts values into the map from a slice starting at a given key.
+    pub fn insert_slice(&mut self, start_key: K, values: &[V])
+    where
+        V: Clone,
+    {
+        let mut key = start_key;
+        for value in values.iter().cloned() {
+            self.insert(key.clone(), value);
+            key = match key.add_one() {
+                Some(k) => k,
+                None => return,
+            };
+        }
+    }
+
     /// Returns a reference to a key's value, if it exists.
     pub fn get<KB: Borrow<K>>(&self, key: KB) -> Option<&V> {
         let key = key.borrow();
@@ -203,20 +218,6 @@ impl<K: Key, V> ContiguousMap<K, V> {
     pub fn iter_slice_mut(&mut self) -> IterSliceMut<K, V> {
         IterSliceMut {
             inner: self.map.iter_mut(),
-        }
-    }
-}
-
-impl<K: Key, V: Clone> ContiguousMap<K, V> {
-    /// Inserts values into the map from a slice starting at a given key.
-    pub fn insert_slice(&mut self, start_key: K, values: &[V]) {
-        let mut key = start_key;
-        for value in values.iter().cloned() {
-            self.insert(key.clone(), value);
-            key = match key.add_one() {
-                Some(k) => k,
-                None => return,
-            };
         }
     }
 }
