@@ -87,6 +87,61 @@ impl<K: Key, V> ContiguousMap<K, V> {
         }
     }
 
+    /// Removes a key's value in this map, returning it if it existed.
+    pub fn remove<KB: Borrow<K>>(&mut self, key: KB) -> Option<V> {
+        let key = key.borrow();
+        let entry = self.map.range_mut(..=key).next_back()?;
+        let index = key.difference(entry.0)?;
+        use std::cmp::Ordering;
+        // (entry.1.len() - 1) always valid due to ContiguousMap vectors never being empty
+        match index.cmp(&(entry.1.len() - 1)) {
+            Ordering::Greater => {
+                // index out of bounds
+                None
+            }
+            Ordering::Equal => {
+                // just need to pop off the last item in the entry's vec
+                let value = entry
+                    .1
+                    .pop()
+                    .expect("internal vectors in ContiguousMap are never empty");
+                if entry.1.is_empty() {
+                    self.map
+                        .remove(key)
+                        .expect("removing now empty entry from map that we know exists");
+                }
+                Some(value)
+            }
+            Ordering::Less => {
+                // need to remove a non-last item in the entry's vec
+                if index == 0 {
+                    // remove the front element and create a new entry for the next adjacent key
+                    let mut entry = self
+                        .map
+                        .remove_entry(key)
+                        .expect("removing entry that is known to exist");
+                    entry.0 = entry.0.add_one().expect(
+                        "key has a value for the next adjacent key, this next key must exist",
+                    );
+                    let value = entry.1.remove(0);
+                    self.map.insert(entry.0, entry.1);
+                    Some(value)
+                } else {
+                    // split off the tail of the vector, creating a new entry for it
+                    let tail = entry.1.split_off(index + 1);
+                    let value = entry.1.pop().expect(
+                        "removing last item from vector whose size is known to be at least 2",
+                    );
+                    let tail_key = key.add_one().expect(
+                        "key has a value for the next adjacent key, this next key must exist",
+                    );
+                    self.map.insert(tail_key, tail);
+                    Some(value)
+                }
+            }
+        }
+    }
+
     /// Returns a reference to a key's value, if it exists.
     pub fn get<KB: Borrow<K>>(&self, key: KB) -> Option<&V> {
         let key = key.borrow();

@@ -373,3 +373,58 @@ fn iter_slice_mut() {
     assert_eq!((&20, &mut [21][..]), iter.next().unwrap());
     assert_eq!(None, iter.next());
 }
+
+#[test]
+fn remove_missing() {
+    let mut map = ContiguousMap::<usize, usize>::new();
+    map.insert_slice(4, &[1, 2, 3]);
+    for i in 0..4 {
+        assert!(map.remove(i).is_none(), "i={}", i);
+    }
+    for i in 7..10 {
+        assert!(map.remove(i).is_none(), "i={}", i);
+    }
+}
+
+#[test]
+fn remove_front_of_slice() {
+    let mut map = ContiguousMap::new();
+    map.insert(0, 10);
+    map.insert_slice(5, &[15, 16, 17]);
+    map.insert(9, 19);
+    assert_eq!(15, map.remove(5).unwrap());
+    assert_map_same(&map, [(0, vec![10]), (6, vec![16, 17]), (9, vec![19])]);
+}
+
+#[test]
+fn remove_middle_of_slice() {
+    let mut map = ContiguousMap::new();
+    map.insert(0, 10);
+    map.insert_slice(5, &[15, 16, 17]);
+    map.insert(9, 19);
+    assert_eq!(16, map.remove(6).unwrap());
+    assert_map_same(
+        &map,
+        [(0, vec![10]), (5, vec![15]), (7, vec![17]), (9, vec![19])],
+    );
+}
+
+#[test]
+fn remove_end_of_slice() {
+    let mut map = ContiguousMap::new();
+    map.insert(0, 10);
+    map.insert_slice(5, &[15, 16, 17]);
+    map.insert(9, 19);
+    assert_eq!(17, map.remove(7).unwrap());
+    assert_map_same(&map, [(0, vec![10]), (5, vec![15, 16]), (9, vec![19])]);
+}
+
+#[test]
+fn remove_isolated() {
+    let mut map = ContiguousMap::new();
+    map.insert(0, 10);
+    map.insert(5, 15);
+    map.insert(9, 19);
+    assert_eq!(15, map.remove(5).unwrap());
+    assert_map_same(&map, [(0, vec![10]), (9, vec![19])]);
+}
