@@ -1,3 +1,5 @@
+use std::{convert::TryInto, num::NonZeroUsize};
+
 /// Trait that must be implemented for all key types used in a [`ContiguousMap`](crate::ContiguousMap).
 pub trait Key
 where
@@ -10,6 +12,19 @@ where
     /// Gets the difference between this key and another one.
     /// Returns None if the difference does not fit in a usize.
     fn difference(&self, smaller: &Self) -> Option<usize>;
+
+    /// Gets the key that is num steps after this key.
+    /// Returns None if this overflows the key type.
+    ///
+    /// The default implementation repeatedly calls [`Key::add_one()`].
+    /// A more efficient implementation can be provided.
+    fn add_usize(&self, num: NonZeroUsize) -> Option<Self> {
+        let mut value = self.add_one()?;
+        for _ in 1..num.get() {
+            value = value.add_one()?;
+        }
+        Some(value)
+    }
 }
 
 macro_rules! unsigned_key_impl {
@@ -20,10 +35,13 @@ macro_rules! unsigned_key_impl {
             }
 
             fn difference(&self, smaller: &Self) -> Option<usize> {
-                use std::convert::TryInto;
                 self.checked_sub(*smaller)
                     .map(|value| value.try_into().ok())
                     .flatten()
+            }
+
+            fn add_usize(&self, num: NonZeroUsize) -> Option<Self> {
+                self.checked_add(num.get().try_into().ok()?)
             }
         }
     };
@@ -44,7 +62,6 @@ macro_rules! signed_key_impl {
             }
 
             fn difference(&self, smaller: &Self) -> Option<usize> {
-                use std::convert::TryInto;
                 let unsigned = match (*self < 0, *smaller < 0) {
                     (true, true) => {
                         // both negative
@@ -78,7 +95,7 @@ signed_key_impl!(isize);
 
 #[cfg(test)]
 mod test {
-    use crate::Key;
+    use super::*;
 
     #[test]
     fn usize_add_one() {
@@ -128,5 +145,26 @@ mod test {
             assert_eq!(None, i128::MAX.difference(&0));
             assert_eq!(None, 0i128.difference(&i128::MIN));
         }
+    }
+
+    #[track_caller]
+    fn nonzero(num: usize) -> NonZeroUsize {
+        NonZeroUsize::new(num).unwrap()
+    }
+
+    #[test]
+    fn u8_add_usize() {
+        assert_eq!(3, 1u8.add_usize(nonzero(2)).unwrap());
+        assert_eq!(255, 0u8.add_usize(nonzero(255)).unwrap());
+        assert_eq!(None, 1u8.add_usize(nonzero(255)));
+        assert_eq!(None, 0u8.add_usize(nonzero(256)));
+    }
+
+    #[test]
+    fn i8_add_usize() {
+        assert_eq!(-3, (-5i8).add_usize(nonzero(2)).unwrap());
+        assert_eq!(127, (-128i8).add_usize(nonzero(255)).unwrap());
+        assert_eq!(None, (-127i8).add_usize(nonzero(255)));
+        assert_eq!(None, (-128i8).add_usize(nonzero(256)));
     }
 }
