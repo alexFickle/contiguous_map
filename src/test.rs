@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use super::*;
 
 /// Helper function that asserts that a ContiguousMap contains exactly
@@ -275,6 +277,16 @@ fn get_slice_with_len_mut() {
     assert_eq!([1, 2], map.get_slice_with_len_mut(3, 2).unwrap());
 }
 
+#[track_caller]
+fn assert_iter_exhausted<I: FusedIterator>(mut iter: I) {
+    for _ in 0..10 {
+        assert!(
+            iter.next().is_none(),
+            "Expected the iterator to be exhausted."
+        );
+    }
+}
+
 #[test]
 fn into_iter() {
     let map = {
@@ -291,7 +303,7 @@ fn into_iter() {
     assert_eq!((10, 14), iter.next().unwrap());
     assert_eq!((11, 15), iter.next().unwrap());
     assert_eq!((20, 21), iter.next().unwrap());
-    assert_eq!(None, iter.next());
+    assert_iter_exhausted(iter);
 }
 
 #[test]
@@ -310,7 +322,7 @@ fn iter() {
     assert_eq!((10, &14), iter.next().unwrap());
     assert_eq!((11, &15), iter.next().unwrap());
     assert_eq!((20, &21), iter.next().unwrap());
-    assert_eq!(None, iter.next());
+    assert_iter_exhausted(iter);
 }
 
 #[test]
@@ -326,7 +338,7 @@ fn iter_mut() {
     assert_eq!((10, &mut 14), iter.next().unwrap());
     assert_eq!((11, &mut 15), iter.next().unwrap());
     assert_eq!((20, &mut 21), iter.next().unwrap());
-    assert_eq!(None, iter.next());
+    assert_iter_exhausted(iter);
 }
 
 #[test]
@@ -342,7 +354,7 @@ fn iter_vec() {
     assert_eq!((3, vec![1, 2, 3]), iter.next().unwrap());
     assert_eq!((10, vec![14, 15]), iter.next().unwrap());
     assert_eq!((20, vec![21]), iter.next().unwrap());
-    assert_eq!(None, iter.next());
+    assert_iter_exhausted(iter);
 }
 
 #[test]
@@ -358,7 +370,7 @@ fn iter_slice() {
     assert_eq!((&3, &[1, 2, 3][..]), iter.next().unwrap());
     assert_eq!((&10, &[14, 15][..]), iter.next().unwrap());
     assert_eq!((&20, &[21][..]), iter.next().unwrap());
-    assert_eq!(None, iter.next());
+    assert_iter_exhausted(iter);
 }
 
 #[test]
@@ -371,7 +383,7 @@ fn iter_slice_mut() {
     assert_eq!((&3, &mut [1, 2, 3][..]), iter.next().unwrap());
     assert_eq!((&10, &mut [14, 15][..]), iter.next().unwrap());
     assert_eq!((&20, &mut [21][..]), iter.next().unwrap());
-    assert_eq!(None, iter.next());
+    assert_iter_exhausted(iter);
 }
 
 #[test]

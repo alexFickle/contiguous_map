@@ -1,5 +1,8 @@
 use super::{ContiguousMap, Key};
-use std::{collections::btree_map, iter::Peekable};
+use std::{
+    collections::btree_map,
+    iter::{FusedIterator, Peekable},
+};
 
 /// An owning iterator over all `(Key, Value)` entries
 /// in a [`ContiguousMap`] in ascending key order.
@@ -49,6 +52,8 @@ impl<K: Key, V> Iterator for IntoIter<K, V> {
         }
     }
 }
+
+impl<K: Key, V> FusedIterator for IntoIter<K, V> {}
 
 /// An iterator over all `(Key, &Value)` entries
 /// in a [`ContiguousMap`] in ascending key order.
@@ -101,6 +106,8 @@ impl<'a, K: Key, V> Iterator for Iter<'a, K, V> {
     }
 }
 
+impl<'a, K: Key, V> FusedIterator for Iter<'a, K, V> {}
+
 /// A mutable iterator over all `(Key, &mut Value)` entries
 /// in a [`ContiguousMap`] in ascending key order.
 ///
@@ -152,6 +159,8 @@ impl<'a, K: Key, V> Iterator for IterMut<'a, K, V> {
     }
 }
 
+impl<'a, K: Key, V> FusedIterator for IterMut<'a, K, V> {}
+
 /// An owning iterator over all the contiguous `(Key, Vec<Value>)` entries
 /// in a [`ContiguousMap`] in ascending key order.
 ///
@@ -175,6 +184,8 @@ impl<K: Key, V> Iterator for IterVec<K, V> {
         self.inner.next()
     }
 }
+
+impl<K: Key, V> FusedIterator for IterVec<K, V> {}
 
 /// An iterator over all the contiguous `(&Key, &[Value])` entries
 /// in a [`ContiguousMap`] in ascending key order.
@@ -200,6 +211,8 @@ impl<'a, K: Key, V> Iterator for IterSlice<'a, K, V> {
     }
 }
 
+impl<'a, K: Key, V> FusedIterator for IterSlice<'a, K, V> {}
+
 /// A mutable iterator over all the contiguous `(&Key, &mut [Value])` entries
 /// in a [`ContiguousMap`] in ascending key order.
 ///
@@ -223,3 +236,5 @@ impl<'a, K: Key, V> Iterator for IterSliceMut<'a, K, V> {
         self.inner.next().map(|(k, v)| (k, &mut v[..]))
     }
 }
+
+impl<'a, K: Key, V> FusedIterator for IterSliceMut<'a, K, V> {}
