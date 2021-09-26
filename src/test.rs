@@ -287,6 +287,20 @@ fn assert_iter_exhausted<I: FusedIterator>(mut iter: I) {
     }
 }
 
+#[track_caller]
+fn assert_double_ended_iter_exhausted<I: DoubleEndedIterator + FusedIterator>(mut iter: I) {
+    for _ in 0..10 {
+        assert!(
+            iter.next().is_none(),
+            "Expected the iterator to be exhausted, iter.next() gave a value."
+        );
+        assert!(
+            iter.next_back().is_none(),
+            "Expected the iterator to be exhausted, iter.next_back() gave a value."
+        );
+    }
+}
+
 #[test]
 fn into_iter() {
     let map = {
@@ -304,6 +318,40 @@ fn into_iter() {
     assert_eq!((11, 15), iter.next().unwrap());
     assert_eq!((20, 21), iter.next().unwrap());
     assert_iter_exhausted(iter);
+}
+
+#[test]
+fn into_iter_reverse() {
+    let map = {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+        map.insert(20, 21);
+        map.insert_slice(10, &[14, 15]);
+        map
+    };
+    let mut iter = map.into_iter();
+    assert_eq!((20, 21), iter.next_back().unwrap());
+    assert_eq!((11, 15), iter.next_back().unwrap());
+    assert_eq!((10, 14), iter.next_back().unwrap());
+    assert_eq!((5, 3), iter.next_back().unwrap());
+    assert_eq!((4, 2), iter.next_back().unwrap());
+    assert_eq!((3, 1), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
+}
+
+#[test]
+fn into_iter_double_ended() {
+    let map = {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(0, &[10, 11, 12, 13]);
+        map
+    };
+    let mut iter = map.into_iter();
+    assert_eq!((0, 10), iter.next().unwrap());
+    assert_eq!((3, 13), iter.next_back().unwrap());
+    assert_eq!((1, 11), iter.next().unwrap());
+    assert_eq!((2, 12), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
 }
 
 #[test]
@@ -326,6 +374,40 @@ fn iter() {
 }
 
 #[test]
+fn iter_reverse() {
+    let map = {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+        map.insert(20, 21);
+        map.insert_slice(10, &[14, 15]);
+        map
+    };
+    let mut iter = map.iter();
+    assert_eq!((20, &21), iter.next_back().unwrap());
+    assert_eq!((11, &15), iter.next_back().unwrap());
+    assert_eq!((10, &14), iter.next_back().unwrap());
+    assert_eq!((5, &3), iter.next_back().unwrap());
+    assert_eq!((4, &2), iter.next_back().unwrap());
+    assert_eq!((3, &1), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
+}
+
+#[test]
+fn iter_double_ended() {
+    let map = {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(0, &[10, 11, 12, 13]);
+        map
+    };
+    let mut iter = map.iter();
+    assert_eq!((0, &10), iter.next().unwrap());
+    assert_eq!((3, &13), iter.next_back().unwrap());
+    assert_eq!((1, &11), iter.next().unwrap());
+    assert_eq!((2, &12), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
+}
+
+#[test]
 fn iter_mut() {
     let mut map = ContiguousMap::<usize, usize>::new();
     map.insert_slice(3, &[1, 2, 3]);
@@ -339,6 +421,34 @@ fn iter_mut() {
     assert_eq!((11, &mut 15), iter.next().unwrap());
     assert_eq!((20, &mut 21), iter.next().unwrap());
     assert_iter_exhausted(iter);
+}
+
+#[test]
+fn iter_mut_reverse() {
+    let mut map = ContiguousMap::<usize, usize>::new();
+    map.insert_slice(3, &[1, 2, 3]);
+    map.insert(20, 21);
+    map.insert_slice(10, &[14, 15]);
+    let mut iter = map.iter_mut();
+    assert_eq!((20, &mut 21), iter.next_back().unwrap());
+    assert_eq!((11, &mut 15), iter.next_back().unwrap());
+    assert_eq!((10, &mut 14), iter.next_back().unwrap());
+    assert_eq!((5, &mut 3), iter.next_back().unwrap());
+    assert_eq!((4, &mut 2), iter.next_back().unwrap());
+    assert_eq!((3, &mut 1), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
+}
+
+#[test]
+fn iter_mut_double_ended() {
+    let mut map = ContiguousMap::<usize, usize>::new();
+    map.insert_slice(0, &[10, 11, 12, 13]);
+    let mut iter = map.iter_mut();
+    assert_eq!((0, &mut 10), iter.next().unwrap());
+    assert_eq!((3, &mut 13), iter.next_back().unwrap());
+    assert_eq!((1, &mut 11), iter.next().unwrap());
+    assert_eq!((2, &mut 12), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
 }
 
 #[test]
@@ -358,6 +468,22 @@ fn iter_vec() {
 }
 
 #[test]
+fn iter_vec_double_ended() {
+    let map = {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+        map.insert(20, 21);
+        map.insert_slice(10, &[14, 15]);
+        map
+    };
+    let mut iter = map.iter_vec();
+    assert_eq!((20, vec![21]), iter.next_back().unwrap());
+    assert_eq!((3, vec![1, 2, 3]), iter.next().unwrap());
+    assert_eq!((10, vec![14, 15]), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
+}
+
+#[test]
 fn iter_slice() {
     let map = {
         let mut map = ContiguousMap::<usize, usize>::new();
@@ -374,6 +500,22 @@ fn iter_slice() {
 }
 
 #[test]
+fn iter_slice_double_ended() {
+    let map = {
+        let mut map = ContiguousMap::<usize, usize>::new();
+        map.insert_slice(3, &[1, 2, 3]);
+        map.insert(20, 21);
+        map.insert_slice(10, &[14, 15]);
+        map
+    };
+    let mut iter = map.iter_slice();
+    assert_eq!((&20, &[21][..]), iter.next_back().unwrap());
+    assert_eq!((&3, &[1, 2, 3][..]), iter.next().unwrap());
+    assert_eq!((&10, &[14, 15][..]), iter.next_back().unwrap());
+    assert_double_ended_iter_exhausted(iter);
+}
+
+#[test]
 fn iter_slice_mut() {
     let mut map = ContiguousMap::<usize, usize>::new();
     map.insert_slice(3, &[1, 2, 3]);
@@ -383,6 +525,19 @@ fn iter_slice_mut() {
     assert_eq!((&3, &mut [1, 2, 3][..]), iter.next().unwrap());
     assert_eq!((&10, &mut [14, 15][..]), iter.next().unwrap());
     assert_eq!((&20, &mut [21][..]), iter.next().unwrap());
+    assert_iter_exhausted(iter);
+}
+
+#[test]
+fn iter_slice_mut_double_ended() {
+    let mut map = ContiguousMap::<usize, usize>::new();
+    map.insert_slice(3, &[1, 2, 3]);
+    map.insert(20, 21);
+    map.insert_slice(10, &[14, 15]);
+    let mut iter = map.iter_slice_mut();
+    assert_eq!((&20, &mut [21][..]), iter.next_back().unwrap());
+    assert_eq!((&3, &mut [1, 2, 3][..]), iter.next().unwrap());
+    assert_eq!((&10, &mut [14, 15][..]), iter.next_back().unwrap());
     assert_iter_exhausted(iter);
 }
 
