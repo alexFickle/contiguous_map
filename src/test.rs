@@ -1,4 +1,4 @@
-use std::iter::FusedIterator;
+use std::{iter::FusedIterator, vec};
 
 use super::*;
 
@@ -594,4 +594,194 @@ fn remove_isolated() {
     map.insert(9, 19);
     assert_eq!(15, map.remove(5).unwrap());
     assert_map_same(&map, [(0, vec![10]), (9, vec![19])]);
+}
+
+#[test]
+fn clear() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear();
+    assert_map_same(&map, []);
+}
+
+#[test]
+fn clear_range_full() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(..);
+    assert_map_same(&map, []);
+}
+
+#[test]
+fn clear_range() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(11..14);
+    assert_map_same(&map, [(10, vec![20]), (14, vec![24, 25])]);
+}
+
+#[test]
+fn clear_range_inclusive() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(11..=14);
+    assert_map_same(&map, [(10, vec![20]), (15, vec![25])]);
+}
+
+#[test]
+fn clear_range_from() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(11..);
+    assert_map_same(&map, [(10, vec![20])]);
+}
+
+#[test]
+fn clear_range_from_entire_map() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.insert_slice(30, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(10..);
+    assert_map_same(&map, []);
+}
+
+#[test]
+fn clear_range_from_half_map() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.insert_slice(30, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(20..);
+    assert_map_same(&map, [(10, vec![20, 21, 22, 23, 24, 25])]);
+}
+
+#[test]
+fn clear_range_from_too_big() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[1, 2, 3]);
+    map.clear_range(50..);
+    assert_map_same(&map, [(10, vec![1, 2, 3])]);
+}
+
+#[test]
+fn clear_range_from_at_end() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[1, 2, 3]);
+    map.clear_range(12..);
+    // should have cleared the last element
+    assert_map_same(&map, [(10, vec![1, 2])]);
+}
+
+#[test]
+fn clear_range_from_start_exclusive_at_end() {
+    use std::ops::Bound::*;
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[1, 2, 3]);
+    map.clear_range((Excluded(12), Unbounded));
+    // should have done nothing
+    assert_map_same(&map, [(10, vec![1, 2, 3])]);
+}
+
+#[test]
+fn clear_range_to() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(..12);
+    assert_map_same(&map, [(12, vec![22, 23, 24, 25])]);
+}
+
+#[test]
+fn clear_range_to_entire_map() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.insert_slice(30, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(..=35);
+    assert_map_same(&map, []);
+}
+
+#[test]
+fn clear_range_to_half_map() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.insert_slice(30, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(..=20);
+    assert_map_same(&map, [(30, vec![20, 21, 22, 23, 24, 25])]);
+}
+
+#[test]
+fn clear_range_to_at_start() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[1, 2, 3]);
+    map.clear_range(..10);
+    // should have done nothing
+    assert_map_same(&map, [(10, vec![1, 2, 3])]);
+}
+
+#[test]
+fn clear_range_to_too_small() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[1, 2, 3]);
+    map.clear_range(..5);
+    assert_map_same(&map, [(10, vec![1, 2, 3])]);
+}
+
+#[test]
+fn clear_range_to_inclusive() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range(..=12);
+    assert_map_same(&map, [(13, vec![23, 24, 25])]);
+}
+
+#[test]
+fn clear_range_to_inclusive_at_start() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[1, 2, 3]);
+    map.clear_range(..=10);
+    // should have cleared just the first element
+    assert_map_same(&map, [(11, vec![2, 3])]);
+}
+
+#[test]
+fn clear_range_start_exclusive() {
+    use std::ops::Bound::*;
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_range((Excluded(&11), Excluded(&14)));
+    assert_map_same(&map, [(10, vec![20, 21]), (14, vec![24, 25])]);
+}
+
+#[test]
+fn clear_range_start_exclusive_near_overflow() {
+    use std::ops::Bound::*;
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    // should do nothing, but should not panic
+    map.clear_range((Excluded(&usize::MAX), Excluded(&usize::MAX)));
+    assert_map_same(&map, [(10, vec![20, 21, 22, 23, 24, 25])]);
+}
+
+#[test]
+fn clear_range_invalid() {
+    use std::ops::Bound::*;
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    // should do nothing, but should not panic
+    map.clear_range((Included(&13), Excluded(&10)));
+    assert_map_same(&map, [(10, vec![20, 21, 22, 23, 24, 25])]);
+}
+
+#[test]
+fn clear_with_len() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(10, &[20, 21, 22, 23, 24, 25]);
+    map.clear_with_len(11, 3);
+    assert_map_same(&map, [(10, vec![20]), (14, vec![24, 25])]);
+}
+
+#[test]
+fn clear_with_len_overflow() {
+    let mut map = ContiguousMap::new();
+    map.insert_slice(usize::MAX - 3, &[1, 2, 3]);
+    map.clear_with_len(usize::MAX - 1, 100);
+    assert_map_same(&map, [(usize::MAX - 3, vec![1, 2])]);
 }

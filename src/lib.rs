@@ -2,7 +2,12 @@
 //! so they may be accessed as a slice.
 #![warn(missing_docs)]
 
-use std::{borrow::Borrow, collections::BTreeMap};
+use std::{
+    borrow::Borrow,
+    cmp::Ordering,
+    collections::BTreeMap,
+    ops::{Bound, RangeBounds},
+};
 
 mod iter;
 pub use iter::{IntoIter, Iter, IterMut, IterSlice, IterSliceMut, IterVec};
@@ -32,7 +37,6 @@ impl<K: Key, V> ContiguousMap<K, V> {
         // attempt to find an already existing insertion point
         if let Some(insertion_entry) = self.map.range_mut(..=&key).next_back() {
             if let Some(index) = key.difference(insertion_entry.0) {
-                use std::cmp::Ordering;
                 match index.cmp(&insertion_entry.1.len()) {
                     Ordering::Less => {
                         // overwriting a value in insertion_entry
@@ -94,7 +98,6 @@ impl<K: Key, V> ContiguousMap<K, V> {
         let key = key.borrow();
         let entry = self.map.range_mut(..=key).next_back()?;
         let index = key.difference(entry.0)?;
-        use std::cmp::Ordering;
         // (entry.1.len() - 1) always valid due to ContiguousMap vectors never being empty
         match index.cmp(&(entry.1.len() - 1)) {
             Ordering::Greater => {
@@ -144,6 +147,150 @@ impl<K: Key, V> ContiguousMap<K, V> {
         }
     }
 
+    /// Removes all entries from this map.
+    pub fn clear(&mut self) {
+        self.map.clear()
+    }
+
+    /// Removes all entries within a range of keys.
+    pub fn clear_range<R: RangeBounds<K>>(&mut self, range: R) {
+        // decode the bounds, delegating to other functions if unbounded
+        let (start, start_included) = match range.start_bound() {
+            Bound::Unbounded => return self.clear_up_to_bound(range.end_bound()),
+            Bound::Included(start) => (start, true),
+            Bound::Excluded(start) => (start, false),
+        };
+        let (end, end_included) = match range.end_bound() {
+            Bound::Unbounded => return self.clear_from_bound(start, start_included),
+            Bound::Included(end) => (end, true),
+            Bound::Excluded(end) => (end, false),
+        };
+        // handle bounded ranges
+        let mut key = if start_included {
+            start.clone()
+        } else {
+            match start.add_one() {
+                Some(key) => key,
+                None => return,
+            }
+        };
+        while &key < end {
+            self.remove(&key);
+            key = key.add_one().unwrap();
+        }
+        if end_included && &key == end {
+            self.remove(&key);
+        }
+    }
+
+    /// Internal function that clears the range (Unbounded, upper_bound).
+    fn clear_up_to_bound(&mut self, upper_bound: Bound<&K>) {
+        // decode the end bound, if it is unbounded just clear the map
+        let (end, end_included) = match upper_bound {
+            Bound::Unbounded => return self.clear(),
+            Bound::Included(end) => (end, true),
+            Bound::Excluded(end) => (end, false),
+        };
+        loop {
+            // the first entry in the map will be tested for clearing
+            let entry = match self.map.iter().next() {
+                Some(entry) => entry,
+                None => return,
+            };
+            // if the entire entry is outside of the range of clearing we are done
+            let out_of_range = match (entry.0.cmp(end), end_included) {
+                (Ordering::Less, _) => false,
+                (Ordering::Equal, true) => false,
+                (Ordering::Equal, false) => true,
+                (Ordering::Greater, _) => true,
+            };
+            if out_of_range {
+                return;
+            }
+            // if the entire entry is in bounds of the range of clearing remove it
+            let first_key_in_entry = entry.0.clone();
+            let last_key_in_entry = entry.0.add_usize(entry.1.len() - 1).unwrap();
+            let remove_entry = match last_key_in_entry.cmp(end) {
+                Ordering::Less => true,
+                Ordering::Equal => end_included,
+                Ordering::Greater => false,
+            };
+            if remove_entry {
+                self.map.remove(&first_key_in_entry).unwrap();
+            } else {
+                // need to clear elements from the front of the entry, then we are done
+                let mut vec = self.map.remove(&first_key_in_entry).unwrap();
+                let num_to_clear =
+                    end.difference(&first_key_in_entry).unwrap() + end_included as usize;
+                vec.rotate_left(num_to_clear);
+                vec.truncate(vec.len() - num_to_clear);
+                let key = if end_included {
+                    end.add_one().unwrap()
+                } else {
+                    end.clone()
+                };
+                self.map.insert(key, vec);
+                return;
+            }
+        }
+    }
+
+    /// Internal function that clears the range (lower_bound, Unbounded).
+    ///
+    /// Unlike clear_up_to_bound() the bound is already decoded into a
+    /// starting key and if the start is inclusive.  This means that
+    /// an unbounded lower_bound is not possible.  This difference is
+    /// due to how these functions are used in clear_range().
+    fn clear_from_bound(&mut self, start: &K, start_included: bool) {
+        loop {
+            // the last entry in the map will be tested for clearing
+            let entry = match self.map.iter().next_back() {
+                Some(entry) => entry,
+                None => return,
+            };
+            // if the entire entry is outside of the range of removal we are done
+            let last_key_in_entry = entry.0.add_usize(entry.1.len() - 1).unwrap();
+            let out_of_range = match (start.cmp(&last_key_in_entry), start_included) {
+                (Ordering::Less, _) => false,
+                (Ordering::Equal, true) => false,
+                (Ordering::Equal, false) => true,
+                (Ordering::Greater, _) => true,
+            };
+            if out_of_range {
+                return;
+            }
+            // if the entire entry is in bounds of the range of removal remove it
+            let first_key_in_entry = entry.0.clone();
+            let remove_entry = match first_key_in_entry.cmp(start) {
+                Ordering::Less => false,
+                Ordering::Equal => start_included,
+                Ordering::Greater => true,
+            };
+            if remove_entry {
+                self.map.remove(&first_key_in_entry).unwrap();
+            } else {
+                // need to clear elements from the back of the entry, then we are done
+                let vec = self.map.get_mut(&first_key_in_entry).unwrap();
+                let num_to_clear =
+                    last_key_in_entry.difference(start).unwrap() + start_included as usize;
+                vec.truncate(vec.len() - num_to_clear);
+                return;
+            }
+        }
+    }
+
+    /// Removes all entries starting at the provided key for the next len adjacent keys.
+    pub fn clear_with_len<KB: Borrow<K>>(&mut self, start_key: KB, len: usize) {
+        let mut key = start_key.borrow().clone();
+        for _ in 0..len {
+            self.remove(&key);
+            key = match key.add_one() {
+                Some(key) => key,
+                None => break,
+            };
+        }
+    }
+
     /// Returns a reference to a key's value, if it exists.
     pub fn get<KB: Borrow<K>>(&self, key: KB) -> Option<&V> {
         let key = key.borrow();
@@ -169,7 +316,6 @@ impl<K: Key, V> ContiguousMap<K, V> {
         } else {
             return None;
         };
-        use std::ops::Bound;
         let length = match range.end_bound() {
             Bound::Unbounded => slice.len(),
             Bound::Excluded(end) => end.difference(range.start_bound())?,
@@ -196,7 +342,6 @@ impl<K: Key, V> ContiguousMap<K, V> {
         } else {
             return None;
         };
-        use std::ops::Bound;
         let length = match range.end_bound() {
             Bound::Unbounded => slice.len(),
             Bound::Excluded(end) => end.difference(range.start_bound())?,
