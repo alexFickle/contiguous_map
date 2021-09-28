@@ -31,6 +31,33 @@ impl<K: Key, V> ContiguousMap<K, V> {
         }
     }
 
+    /// Gets the number of entries in this map.
+    ///
+    /// This is the total number of values in the map, not the number of contiguous regions.
+    /// For the number of contiguous regions use [`ContiguousMap::num_contiguous_regions()`]
+    pub fn len(&self) -> usize {
+        self.map.values().map(|vec| vec.len()).sum()
+    }
+
+    /// Gets if this map is empty.
+    pub fn is_empty(&self) -> bool {
+        // as no empty entries are allowed in the map we do not
+        // need to check for a map full of empty vectors
+        self.map.is_empty()
+    }
+
+    /// Gets the number of contiguous regions in this map.
+    ///
+    /// This is the number of (key, slice) tuples that will be iterated over
+    /// by iterators returned by [`ContiguousMap::iter_slice()`] and
+    /// [`ContiguousMap::iter_slice_mut()`].
+    ///
+    /// This is also th number of (key, vector) tuples that will be iterated over
+    /// by iterators returned by [`ContiguousMap::iter_vec()`].
+    pub fn num_contiguous_regions(&self) -> usize {
+        self.map.len()
+    }
+
     /// Inserts a value into a map with a given key.
     /// Returns the old value for this key if one existed.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {

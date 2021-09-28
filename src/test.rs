@@ -785,3 +785,36 @@ fn clear_with_len_overflow() {
     map.clear_with_len(usize::MAX - 1, 100);
     assert_map_same(&map, [(usize::MAX - 3, vec![1, 2])]);
 }
+
+#[test]
+fn len_empty() {
+    let map = ContiguousMap::<usize, i32>::new();
+    assert_eq!(0, map.len());
+    assert!(map.is_empty());
+    assert_eq!(0, map.num_contiguous_regions());
+}
+
+#[test]
+fn len_one_region() {
+    let map = {
+        let mut map = ContiguousMap::<usize, i32>::new();
+        map.insert_slice(0, &[1, 2, 3]);
+        map
+    };
+    assert_eq!(3, map.len());
+    assert!(!map.is_empty());
+    assert_eq!(1, map.num_contiguous_regions());
+}
+
+#[test]
+fn len_two_regions() {
+    let map = {
+        let mut map = ContiguousMap::<usize, i32>::new();
+        map.insert_slice(0, &[1, 2, 3]);
+        map.insert_slice(10, &[1, 2, 3, 4]);
+        map
+    };
+    assert_eq!(7, map.len());
+    assert!(!map.is_empty());
+    assert_eq!(2, map.num_contiguous_regions());
+}
