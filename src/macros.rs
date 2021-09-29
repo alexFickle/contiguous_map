@@ -20,11 +20,11 @@ macro_rules! cmap {
         {
             let mut map = $crate::ContiguousMap::new();
             $(
-                let mut key = Some($key);
+                let mut _key = Some($key);
                 $(
-                    let k = key.unwrap();
+                    let k = _key.unwrap();
                     map.insert(k, $value);
-                    key = <_ as $crate::Key>::add_one(&k);
+                    _key = <_ as $crate::Key>::add_one(&k);
                 )+
             )*
             map
