@@ -9,6 +9,8 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
+mod macros;
+
 mod iter;
 pub use iter::{IntoIter, Iter, IterMut, IterSlice, IterSliceMut, IterVec};
 mod key;
