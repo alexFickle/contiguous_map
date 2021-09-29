@@ -337,3 +337,242 @@ impl<'a, K: Key, V> DoubleEndedIterator for IterSliceMut<'a, K, V> {
 }
 
 impl<'a, K: Key, V> FusedIterator for IterSliceMut<'a, K, V> {}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::{
+        convert::identity,
+        iter::{empty, once},
+    };
+
+    /// Test helper functions added as member functions to
+    /// the entry types given to next_impl() and next_back_impl().
+    trait EntryTestExt {
+        /// Helper function that asserts that an entry contains
+        /// only one element and it matches the given elem.
+        fn assert_contains_only(self, elem: (u8, u8));
+
+        /// Helper function that asserts that an entry is empty.
+        fn assert_empty(self);
+    }
+
+    impl<I: Iterator<Item = u8>> EntryTestExt for Option<(u8, I)> {
+        #[track_caller]
+        fn assert_contains_only(self, elem: (u8, u8)) {
+            let mut entry = self.expect("The entry is None and therefore empty.");
+            assert!(
+                entry.0 == elem.0,
+                "The entry's key does not match the given element's key.",
+            );
+            assert!(
+                entry.1.next() == Some(elem.1),
+                "The entry's value does not match the given element's value.",
+            );
+            assert!(
+                entry.1.next().is_none(),
+                "The entry contains more than one value."
+            );
+        }
+
+        #[track_caller]
+        fn assert_empty(self) {
+            assert!(self.is_none(), "The entry is not empty.");
+        }
+    }
+
+    #[test]
+    fn next_impl_empty() {
+        let mut front: Option<(u8, std::vec::IntoIter<u8>)> = None;
+        let mut back = None;
+        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert!(next.is_none());
+        front.assert_empty();
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_impl_from_front() {
+        let mut front = Some((0, [1, 2].iter().copied()));
+        let mut back = None;
+        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((0, 1), next.unwrap());
+        front.assert_contains_only((1, 2));
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_impl_from_front_back_preserved() {
+        let mut front = Some((0, [1, 2].iter().copied()));
+        let mut back = Some((10, [20].iter().copied()));
+        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((0, 1), next.unwrap());
+        front.assert_contains_only((1, 2));
+        back.assert_contains_only((10, 20));
+    }
+
+    #[test]
+    fn next_impl_from_map_iter_front_none() {
+        let mut front = None;
+        let mut back = None;
+        let next = next_impl(
+            &mut front,
+            &mut once((0, [1, 2].iter().copied())),
+            &mut back,
+            identity,
+        );
+
+        assert_eq!((0, 1), next.unwrap());
+        front.assert_contains_only((1, 2));
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_impl_from_map_iter_front_empty() {
+        let mut front = Some((0, [].iter().copied()));
+        let mut back = None;
+        let next = next_impl(
+            &mut front,
+            &mut once((1, [2, 3].iter().copied())),
+            &mut back,
+            identity,
+        );
+
+        assert_eq!((1, 2), next.unwrap());
+        front.assert_contains_only((2, 3));
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_impl_from_map_iter_back_preserved() {
+        let mut front = None;
+        let mut back = Some((10, [20].iter().copied()));
+        let next = next_impl(
+            &mut front,
+            &mut once((0, [1, 2].iter().copied())),
+            &mut back,
+            identity,
+        );
+
+        assert_eq!((0, 1), next.unwrap());
+        front.assert_contains_only((1, 2));
+        back.assert_contains_only((10, 20));
+    }
+
+    #[test]
+    fn next_impl_from_back() {
+        let mut front = None;
+        let mut back = Some((0, [1, 2].iter().copied()));
+        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((0, 1), next.unwrap());
+        front.assert_contains_only((1, 2));
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_impl_near_overflow() {
+        let mut front = Some((u8::MAX, [1].iter().copied()));
+        let mut back = None;
+        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((u8::MAX, 1), next.unwrap());
+        front.assert_empty();
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_back_impl_empty() {
+        let mut front: Option<(u8, std::vec::IntoIter<u8>)> = None;
+        let mut back = None;
+        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert!(next_back.is_none());
+        front.assert_empty();
+        back.assert_empty();
+    }
+
+    #[test]
+    fn next_back_impl_from_front() {
+        let mut front = Some((0, [1, 2].iter().copied()));
+        let mut back = None;
+        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((1, 2), next_back.unwrap());
+        front.assert_empty();
+        back.assert_contains_only((0, 1));
+    }
+
+    #[test]
+    fn next_back_impl_from_map_iter_back_none() {
+        let mut front = None;
+        let mut back = None;
+        let next_back = next_back_impl(
+            &mut front,
+            &mut once((0, [1, 2].iter().copied())),
+            &mut back,
+            identity,
+        );
+
+        assert_eq!((1, 2), next_back.unwrap());
+        front.assert_empty();
+        back.assert_contains_only((0, 1));
+    }
+
+    #[test]
+    fn next_back_impl_from_map_iter_back_empty() {
+        let mut front = None;
+        let mut back = Some((10, [].iter().copied()));
+        let next_back = next_back_impl(
+            &mut front,
+            &mut once((0, [1, 2].iter().copied())),
+            &mut back,
+            identity,
+        );
+
+        assert_eq!((1, 2), next_back.unwrap());
+        front.assert_empty();
+        back.assert_contains_only((0, 1));
+    }
+
+    #[test]
+    fn next_back_impl_from_map_iter_front_preserved() {
+        let mut front = Some((0, [1].iter().copied()));
+        let mut back = None;
+        let next_back = next_back_impl(
+            &mut front,
+            &mut once((5, [6, 7].iter().copied())),
+            &mut back,
+            identity,
+        );
+
+        assert_eq!((6, 7), next_back.unwrap());
+        front.assert_contains_only((0, 1));
+        back.assert_contains_only((5, 6));
+    }
+
+    #[test]
+    fn next_back_impl_from_back() {
+        let mut front = None;
+        let mut back = Some((0, [1, 2].iter().copied()));
+        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((1, 2), next_back.unwrap());
+        front.assert_empty();
+        back.assert_contains_only((0, 1));
+    }
+
+    #[test]
+    fn next_back_impl_from_back_front_preserved() {
+        let mut front = Some((0, [1].iter().copied()));
+        let mut back = Some((5, [6, 7].iter().copied()));
+        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+
+        assert_eq!((6, 7), next_back.unwrap());
+        front.assert_contains_only((0, 1));
+        back.assert_contains_only((5, 6));
+    }
+}
