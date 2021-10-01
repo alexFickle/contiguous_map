@@ -710,6 +710,27 @@ fn clear_range_invalid() {
 }
 
 #[test]
+fn clear_range_gap() {
+    let mut map = cmap!(
+        10 => 0, 1, 2;
+        30 => 0, 1, 2;
+    );
+    map.clear_range(20..25);
+    assert_map_same(&map, [(10, vec![0, 1, 2]), (30, vec![0, 1, 2])]);
+}
+
+#[test]
+fn clear_range_overlap() {
+    let mut map = cmap!(
+        10 => 0, 1, 2;
+        20 => 0, 1, 2;
+        30 => 0, 1, 2;
+    );
+    map.clear_range(12..32);
+    assert_map_same(&map, [(10, vec![0, 1]), (32, vec![2])]);
+}
+
+#[test]
 fn clear_with_len() {
     let mut map = cmap!(10 => 20, 21, 22, 23, 24, 25);
     map.clear_with_len(11, 3);
@@ -748,4 +769,92 @@ fn len_two_regions() {
     assert_eq!(7, map.len());
     assert!(!map.is_empty());
     assert_eq!(2, map.num_contiguous_regions());
+}
+
+#[test]
+fn first() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(Index { key: 1, offset: 0 }, map.first().unwrap());
+    assert_eq!(None, ContiguousMap::<usize, usize>::new().first());
+}
+
+#[test]
+fn last() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(Index { key: 5, offset: 2 }, map.last().unwrap());
+    assert_eq!(None, ContiguousMap::<usize, usize>::new().last());
+}
+
+#[test]
+fn find() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(None, map.find(&0));
+    assert_eq!(Index { key: 1, offset: 0 }, map.find(&1).unwrap());
+    assert_eq!(Index { key: 1, offset: 1 }, map.find(&2).unwrap());
+    assert_eq!(None, map.find(&3));
+    assert_eq!(None, map.find(&4));
+    assert_eq!(Index { key: 5, offset: 0 }, map.find(&5).unwrap());
+    assert_eq!(Index { key: 5, offset: 1 }, map.find(&6).unwrap());
+    assert_eq!(Index { key: 5, offset: 2 }, map.find(&7).unwrap());
+    assert_eq!(None, map.find(&8));
+}
+
+#[test]
+fn find_at_most() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(None, map.find_at_most(&0));
+    assert_eq!(Index { key: 1, offset: 0 }, map.find_at_most(&1).unwrap());
+    assert_eq!(Index { key: 1, offset: 1 }, map.find_at_most(&4).unwrap());
+    assert_eq!(Index { key: 5, offset: 2 }, map.find_at_most(&9).unwrap());
+}
+
+#[test]
+fn find_less() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(None, map.find_less(&0));
+    assert_eq!(None, map.find_less(&1));
+    assert_eq!(Index { key: 1, offset: 0 }, map.find_less(&2).unwrap());
+    assert_eq!(Index { key: 1, offset: 1 }, map.find_less(&5).unwrap());
+    assert_eq!(Index { key: 5, offset: 2 }, map.find_less(&100).unwrap());
+}
+
+#[test]
+fn find_at_least() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(Index { key: 1, offset: 0 }, map.find_at_least(&0).unwrap());
+    assert_eq!(Index { key: 1, offset: 0 }, map.find_at_least(&1).unwrap());
+    assert_eq!(Index { key: 1, offset: 1 }, map.find_at_least(&2).unwrap());
+    assert_eq!(Index { key: 5, offset: 0 }, map.find_at_least(&3).unwrap());
+    assert_eq!(None, map.find_at_least(&100));
+}
+
+#[test]
+fn find_more() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    assert_eq!(Index { key: 1, offset: 0 }, map.find_more(&0).unwrap());
+    assert_eq!(Index { key: 1, offset: 1 }, map.find_more(&1).unwrap());
+    assert_eq!(Index { key: 5, offset: 0 }, map.find_more(&2).unwrap());
+    assert_eq!(Index { key: 5, offset: 1 }, map.find_more(&5).unwrap());
+    assert_eq!(None, map.find_more(&100));
 }

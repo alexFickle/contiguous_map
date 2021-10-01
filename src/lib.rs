@@ -2,12 +2,7 @@
 //! so they may be accessed as a slice.
 #![warn(missing_docs)]
 
-use std::{
-    borrow::Borrow,
-    cmp::Ordering,
-    collections::BTreeMap,
-    ops::{Bound, RangeBounds},
-};
+use std::{borrow::Borrow, cmp::Ordering, collections::BTreeMap, ops::{Bound, RangeBounds}};
 
 mod macros;
 
@@ -17,6 +12,13 @@ mod key;
 pub use key::Key;
 mod range_bounds;
 pub use range_bounds::InclusiveStartRangeBounds;
+
+/// An index into a ContiguousMap.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Index<K: Key> {
+    key: K,
+    offset: usize,
+}
 
 /// An ordered, associative container like [`std::collections::BTreeMap`].
 /// Additionally stores values with adjacent keys contiguously so they may
@@ -58,6 +60,97 @@ impl<K: Key, V> ContiguousMap<K, V> {
     /// by iterators returned by [`ContiguousMap::iter_vec()`].
     pub fn num_contiguous_regions(&self) -> usize {
         self.map.len()
+    }
+
+    /// Gets an index for the first entry in this map.
+    /// Returns None if this map is empty.
+    fn first(&self) -> Option<Index<K>> {
+        let entry = self.map.iter().next()?;
+        Some(Index {
+            key: entry.0.clone(),
+            offset: 0,
+        })
+    }
+
+    /// Gets an index for the last entry in this map.
+    /// Returns None if this map is empty.
+    fn last(&self) -> Option<Index<K>> {
+        let entry = self.map.iter().next_back()?;
+        Some(Index {
+            key: entry.0.clone(),
+            offset: entry.1.len() - 1,
+        })
+    }
+
+    /// Gets an index for a key.  Returns None if the key is not in this map.
+    fn find(&self, key: &K) -> Option<Index<K>> {
+        let entry = self.map.range(..=key).next_back()?;
+        let offset = key.difference(entry.0)?;
+        if offset >= entry.1.len() {
+            None
+        } else {
+            Some(Index {
+                key: entry.0.clone(),
+                offset,
+            })
+        }
+    }
+
+    /// Gets an index for the largest key that is at most the given key.
+    /// Returns None if all keys in the map are greater than the given key.
+    fn find_at_most(&self, key: &K) -> Option<Index<K>> {
+        let entry = self.map.range(..=key).next_back()?;
+        let offset = key.difference(entry.0)?;
+        Some(Index {
+            key: entry.0.clone(),
+            offset: std::cmp::min(offset, entry.1.len() - 1),
+        })
+    }
+
+    /// Gets an index for the largest key that is less than the given key.
+    /// Returns None if all keys in the map are greater than or equal to the given key.
+    fn find_less(&self, key: &K) -> Option<Index<K>> {
+        self.find_at_most(&key.sub_one()?)
+    }
+
+    /// Gets an index for the smallest key that is at least the given key.
+    /// Returns None if all keys in the map are smaller than the given key.
+    fn find_at_least(&self, key: &K) -> Option<Index<K>> {
+        if let Some(index) = self.find(key) {
+            Some(index)
+        } else {
+            let entry = self.map.range(key..).next()?;
+            Some(Index {
+                key: entry.0.clone(),
+                offset: 0,
+            })
+        }
+    }
+
+    /// Gets an index for the smallest key that is greater than the given key.
+    /// Returns None if all keys in the map are smaller than or equal to the given key.
+    fn find_more(&self, key: &K) -> Option<Index<K>> {
+        self.find_at_least(&key.add_one()?)
+    }
+
+    /// Finds the inclusive bounds of a range within this map.
+    /// Returns None if there are no elements within the range in this map.
+    fn find_range<R: RangeBounds<K>>(&self, range: R) -> Option<(Index<K>, Index<K>)> {
+        let start = match range.start_bound() {
+            Bound::Excluded(start) => self.find_more(start)?,
+            Bound::Included(start) => self.find_at_least(start)?,
+            Bound::Unbounded => self.first()?,
+        };
+        let end = match range.end_bound() {
+            Bound::Excluded(end) => self.find_less(end)?,
+            Bound::Included(end) => self.find_at_most(end)?,
+            Bound::Unbounded => self.last()?,
+        };
+        if start <= end {
+            Some((start, end))
+        } else {
+            None
+        }
     }
 
     /// Inserts a value into a map with a given key.
@@ -183,140 +276,99 @@ impl<K: Key, V> ContiguousMap<K, V> {
 
     /// Removes all entries within a range of keys.
     pub fn clear_range<R: RangeBounds<K>>(&mut self, range: R) {
-        // decode the bounds, delegating to other functions if unbounded
-        let (start, start_included) = match range.start_bound() {
-            Bound::Unbounded => return self.clear_up_to_bound(range.end_bound()),
-            Bound::Included(start) => (start, true),
-            Bound::Excluded(start) => (start, false),
+        let (start, end) = match self.find_range(range) {
+            Some(range) => range,
+            None => return,
         };
-        let (end, end_included) = match range.end_bound() {
-            Bound::Unbounded => return self.clear_from_bound(start, start_included),
-            Bound::Included(end) => (end, true),
-            Bound::Excluded(end) => (end, false),
-        };
-        // handle bounded ranges
-        let mut key = if start_included {
-            start.clone()
+
+        if start.key == end.key {
+            // entire removal is in a single region
+            let vec = self.map.get_mut(&start.key).unwrap();
+            match (start.offset == 0, end.offset == (vec.len() - 1)) {
+                (true, true) => {
+                    // remove entire entry
+                    self.map.remove(&start.key).unwrap();
+                }
+                (false, true) => {
+                    // pop off elements from the back of the vec
+                    vec.truncate(start.offset);
+                }
+                (true, false) => {
+                    // extract the vec
+                    let mut vec = self.map.remove(&start.key).unwrap();
+                    // remove the front of the vector that was marked for clearing
+                    let num_to_remove = end.offset + 1;
+                    vec.rotate_left(num_to_remove);
+                    vec.truncate(vec.len() - num_to_remove);
+                    // add the tail back into the map right after the region of clearing
+                    self.map.insert(
+                        end.key.add_usize(end.offset).unwrap().add_one().unwrap(),
+                        vec,
+                    );
+                }
+                (false, false) => {
+                    // split the tail that will be retained off of vec
+                    let tail = vec.split_off(end.offset + 1);
+                    // remove the interior elements marked for clearing
+                    vec.truncate(start.offset);
+                    // insert the tail back into the map right after the region of clearing
+                    self.map.insert(
+                        end.key.add_usize(end.offset).unwrap().add_one().unwrap(),
+                        tail,
+                    );
+                }
+            }
         } else {
-            match start.add_one() {
-                Some(key) => key,
-                None => return,
-            }
-        };
-        while &key < end {
-            self.remove(&key);
-            key = key.add_one().unwrap();
-        }
-        if end_included && &key == end {
-            self.remove(&key);
-        }
-    }
+            // removal spans multiple regions
 
-    /// Internal function that clears the range (Unbounded, upper_bound).
-    fn clear_up_to_bound(&mut self, upper_bound: Bound<&K>) {
-        // decode the end bound, if it is unbounded just clear the map
-        let (end, end_included) = match upper_bound {
-            Bound::Unbounded => return self.clear(),
-            Bound::Included(end) => (end, true),
-            Bound::Excluded(end) => (end, false),
-        };
-        loop {
-            // the first entry in the map will be tested for clearing
-            let entry = match self.map.iter().next() {
-                Some(entry) => entry,
-                None => return,
-            };
-            // if the entire entry is outside of the range of clearing we are done
-            let out_of_range = match (entry.0.cmp(end), end_included) {
-                (Ordering::Less, _) => false,
-                (Ordering::Equal, true) => false,
-                (Ordering::Equal, false) => true,
-                (Ordering::Greater, _) => true,
-            };
-            if out_of_range {
-                return;
-            }
-            // if the entire entry is in bounds of the range of clearing remove it
-            let first_key_in_entry = entry.0.clone();
-            let last_key_in_entry = entry.0.add_usize(entry.1.len() - 1).unwrap();
-            let remove_entry = match last_key_in_entry.cmp(end) {
-                Ordering::Less => true,
-                Ordering::Equal => end_included,
-                Ordering::Greater => false,
-            };
-            if remove_entry {
-                self.map.remove(&first_key_in_entry).unwrap();
+            // handle the start region
+            if start.offset == 0 {
+                // remove entire entry
+                self.map.remove(&start.key).unwrap();
             } else {
-                // need to clear elements from the front of the entry, then we are done
-                let mut vec = self.map.remove(&first_key_in_entry).unwrap();
-                let num_to_clear =
-                    end.difference(&first_key_in_entry).unwrap() + end_included as usize;
-                vec.rotate_left(num_to_clear);
-                vec.truncate(vec.len() - num_to_clear);
-                let key = if end_included {
-                    end.add_one().unwrap()
-                } else {
-                    end.clone()
-                };
-                self.map.insert(key, vec);
-                return;
+                // remove the tail of the entry
+                let vec = self.map.get_mut(&start.key).unwrap();
+                vec.truncate(start.offset);
             }
-        }
-    }
 
-    /// Internal function that clears the range (lower_bound, Unbounded).
-    ///
-    /// Unlike clear_up_to_bound() the bound is already decoded into a
-    /// starting key and if the start is inclusive.  This means that
-    /// an unbounded lower_bound is not possible.  This difference is
-    /// due to how these functions are used in clear_range().
-    fn clear_from_bound(&mut self, start: &K, start_included: bool) {
-        loop {
-            // the last entry in the map will be tested for clearing
-            let entry = match self.map.iter().next_back() {
-                Some(entry) => entry,
-                None => return,
-            };
-            // if the entire entry is outside of the range of removal we are done
-            let last_key_in_entry = entry.0.add_usize(entry.1.len() - 1).unwrap();
-            let out_of_range = match (start.cmp(&last_key_in_entry), start_included) {
-                (Ordering::Less, _) => false,
-                (Ordering::Equal, true) => false,
-                (Ordering::Equal, false) => true,
-                (Ordering::Greater, _) => true,
-            };
-            if out_of_range {
-                return;
+            // remove any regions between start and end
+            while let Some((key, _)) = self
+                .map
+                .range((Bound::Excluded(&start.key), Bound::Excluded(&end.key)))
+                .next()
+            {
+                let key = key.clone();
+                self.map.remove(&key).unwrap();
             }
-            // if the entire entry is in bounds of the range of removal remove it
-            let first_key_in_entry = entry.0.clone();
-            let remove_entry = match first_key_in_entry.cmp(start) {
-                Ordering::Less => false,
-                Ordering::Equal => start_included,
-                Ordering::Greater => true,
-            };
-            if remove_entry {
-                self.map.remove(&first_key_in_entry).unwrap();
+
+            // handle the end region
+            let vec = self.map.get(&end.key).unwrap();
+            if vec.len() - 1 == end.offset {
+                // remove entire region
+                self.map.remove(&end.key).unwrap();
             } else {
-                // need to clear elements from the back of the entry, then we are done
-                let vec = self.map.get_mut(&first_key_in_entry).unwrap();
-                let num_to_clear =
-                    last_key_in_entry.difference(start).unwrap() + start_included as usize;
-                vec.truncate(vec.len() - num_to_clear);
-                return;
+                // extract the vec
+                let mut vec = self.map.remove(&end.key).unwrap();
+                // remove the front of the vector that was marked for clearing
+                let num_to_remove = end.offset + 1;
+                vec.rotate_left(num_to_remove);
+                vec.truncate(vec.len() - num_to_remove);
+                // add the tail back into the map right after the region of clearing
+                self.map.insert(
+                    end.key.add_usize(end.offset).unwrap().add_one().unwrap(),
+                    vec,
+                );
             }
         }
     }
 
     /// Removes all entries starting at the provided key for the next len adjacent keys.
     pub fn clear_with_len<KB: Borrow<K>>(&mut self, start_key: KB, len: usize) {
-        let mut key = start_key.borrow().clone();
-        for _ in 0..len {
-            self.remove(&key);
-            key = match key.add_one() {
-                Some(key) => key,
-                None => break,
-            };
+        let start = start_key.borrow();
+        let end = start.add_usize(len);
+        match end {
+            None => self.clear_range(start..),
+            Some(end) => self.clear_range(start..&end),
         }
     }
 
