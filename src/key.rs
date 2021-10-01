@@ -9,6 +9,10 @@ where
     /// Returns None if there is no adjacent key due to self being the max key.
     fn add_one(&self) -> Option<Self>;
 
+    /// Gets the previous adjacent key.
+    /// Returns None if there is no previous adjacent key due to self being the min key.
+    fn sub_one(&self) -> Option<Self>;
+
     /// Gets the difference between this key and another one.
     /// Returns None if the difference does not fit in a usize.
     fn difference(&self, smaller: &Self) -> Option<usize>;
@@ -32,6 +36,10 @@ macro_rules! unsigned_key_impl {
         impl Key for $type {
             fn add_one(&self) -> Option<Self> {
                 self.checked_add(1)
+            }
+
+            fn sub_one(&self) -> Option<Self> {
+                self.checked_sub(1)
             }
 
             fn difference(&self, smaller: &Self) -> Option<usize> {
@@ -59,6 +67,10 @@ macro_rules! signed_key_impl {
         impl Key for $type {
             fn add_one(&self) -> Option<Self> {
                 self.checked_add(1)
+            }
+
+            fn sub_one(&self) -> Option<Self> {
+                self.checked_sub(1)
             }
 
             fn difference(&self, smaller: &Self) -> Option<usize> {
@@ -107,6 +119,13 @@ mod test {
     }
 
     #[test]
+    fn usize_sub_one() {
+        assert_eq!(Some(1), 2usize.sub_one());
+        assert_eq!(Some(usize::MAX - 1), usize::MAX.sub_one());
+        assert_eq!(None, 0usize.sub_one());
+    }
+
+    #[test]
     fn usize_difference() {
         use super::Key;
         assert_eq!(Some(1), 5usize.difference(&4));
@@ -127,6 +146,15 @@ mod test {
         assert_eq!(-99, (-100i8).add_one().unwrap());
         assert_eq!(10, 9i8.add_one().unwrap());
         assert_eq!(None, i8::MAX.add_one());
+    }
+
+    #[test]
+    fn i8_sub_one() {
+        assert_eq!(-1, 0i8.sub_one().unwrap());
+        assert_eq!(0, 1i8.sub_one().unwrap());
+        assert_eq!(i8::MIN, (i8::MIN + 1).sub_one().unwrap());
+        assert_eq!(i8::MAX - 1, i8::MAX.sub_one().unwrap());
+        assert_eq!(None, i8::MIN.sub_one())
     }
 
     #[test]
