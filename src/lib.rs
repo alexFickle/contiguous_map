@@ -2,12 +2,17 @@
 //! so they may be accessed as a slice.
 #![warn(missing_docs)]
 
-use std::{borrow::Borrow, cmp::Ordering, collections::BTreeMap, ops::{Bound, RangeBounds}};
+use std::{
+    borrow::Borrow,
+    cmp::Ordering,
+    collections::BTreeMap,
+    ops::{Bound, RangeBounds},
+};
 
 mod macros;
 
 mod iter;
-pub use iter::{IntoIter, Iter, IterMut, IterSlice, IterSliceMut, IterVec};
+pub use iter::{IntoIter, Iter, IterMut, IterSlice, IterSliceMut, IterVec, Range, RangeMut};
 mod key;
 pub use key::Key;
 mod range_bounds;
@@ -460,6 +465,30 @@ impl<K: Key, V> ContiguousMap<K, V> {
     /// This is due to how contiguous regions are stored internally.
     pub fn iter_mut(&mut self) -> IterMut<K, V> {
         self.into_iter()
+    }
+
+    /// Iteration over a range of keys and values in this map in ascending key order.
+    ///
+    /// Unlike [`std::collections::BTreeMap`] the tuples yielded by the iterator
+    /// contains a key directly instead of a reference to a key.
+    /// This is due to how contiguous regions are stored internally.
+    pub fn range<R: RangeBounds<K>>(&self, range: R) -> Range<K, V> {
+        match self.find_range(range) {
+            None => Range::new_empty(),
+            Some((start, end)) => Range::new(self, start, end),
+        }
+    }
+
+    /// Mutable iteration over a range of keys and values in this map in ascending key order.
+    ///
+    /// Unlike [`std::collections::BTreeMap`] the tuples yielded by the iterator
+    /// contains a key directly instead of a reference to a key.
+    /// This is due to how contiguous regions are stored internally.
+    pub fn range_mut<R: RangeBounds<K>>(&mut self, range: R) -> RangeMut<K, V> {
+        match self.find_range(range) {
+            None => RangeMut::new_empty(),
+            Some((start, end)) => RangeMut::new(self, start, end),
+        }
     }
 
     /// Owning iteration over all keys and values in this map grouped up

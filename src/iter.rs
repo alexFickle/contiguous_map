@@ -1,4 +1,4 @@
-use super::{ContiguousMap, Key};
+use super::{ContiguousMap, Index, Key};
 use std::{collections::btree_map, iter::FusedIterator};
 
 /// Implementation function for [`IntoIter`], [`Iter`], and [`IterMut`]'s next() function.
@@ -17,7 +17,7 @@ use std::{collections::btree_map, iter::FusedIterator};
 ///  in `front_entry` and `back_entry`.
 fn next_impl<K, V, ValIter, MapIter, ExtractFn, ExtractInput>(
     front_entry: &mut Option<(K, ValIter)>,
-    map_iter: &mut MapIter,
+    mut map_iter: Option<&mut MapIter>,
     back_entry: &mut Option<(K, ValIter)>,
     extract: ExtractFn,
 ) -> Option<(K, V)>
@@ -42,7 +42,12 @@ where
         }
 
         // attempt to refill front_entry
-        *front_entry = map_iter.next().map(&extract).or_else(|| back_entry.take());
+        *front_entry = map_iter
+            .as_mut()
+            .map(|iter| iter.next())
+            .flatten()
+            .map(&extract)
+            .or_else(|| back_entry.take());
 
         // test if all iterators are now exhausted
         front_entry.as_ref()?;
@@ -65,7 +70,7 @@ where
 ///  in `front_entry` and `back_entry`.
 fn next_back_impl<K, V, ValIter, MapIter, ExtractFn, ExtractInput>(
     front_entry: &mut Option<(K, ValIter)>,
-    map_iter: &mut MapIter,
+    mut map_iter: Option<&mut MapIter>,
     back_entry: &mut Option<(K, ValIter)>,
     extract: ExtractFn,
 ) -> Option<(K, V)>
@@ -88,7 +93,9 @@ where
 
         // attempt to refill back_entry
         *back_entry = map_iter
-            .next_back()
+            .as_mut()
+            .map(|iter| iter.next_back())
+            .flatten()
             .map(&extract)
             .or_else(|| front_entry.take());
 
@@ -124,7 +131,7 @@ impl<K: Key, V> Iterator for IntoIter<K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         next_impl(
             &mut self.front_entry,
-            &mut self.map_iter,
+            Some(&mut self.map_iter),
             &mut self.back_entry,
             |(k, v)| (k, v.into_iter()),
         )
@@ -135,7 +142,7 @@ impl<K: Key, V> DoubleEndedIterator for IntoIter<K, V> {
     fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
         next_back_impl(
             &mut self.front_entry,
-            &mut self.map_iter,
+            Some(&mut self.map_iter),
             &mut self.back_entry,
             |(k, v)| (k, v.into_iter()),
         )
@@ -173,7 +180,7 @@ impl<'a, K: Key, V> Iterator for Iter<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         next_impl(
             &mut self.front_entry,
-            &mut self.map_iter,
+            Some(&mut self.map_iter),
             &mut self.back_entry,
             |(k, v)| (k.clone(), v.iter()),
         )
@@ -184,7 +191,7 @@ impl<'a, K: Key, V> DoubleEndedIterator for Iter<'a, K, V> {
     fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
         next_back_impl(
             &mut self.front_entry,
-            &mut self.map_iter,
+            Some(&mut self.map_iter),
             &mut self.back_entry,
             |(k, v)| (k.clone(), v.iter()),
         )
@@ -222,7 +229,7 @@ impl<'a, K: Key, V> Iterator for IterMut<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         next_impl(
             &mut self.front_entry,
-            &mut self.map_iter,
+            Some(&mut self.map_iter),
             &mut self.back_entry,
             |(k, v)| (k.clone(), v.iter_mut()),
         )
@@ -233,7 +240,7 @@ impl<'a, K: Key, V> DoubleEndedIterator for IterMut<'a, K, V> {
     fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
         next_back_impl(
             &mut self.front_entry,
-            &mut self.map_iter,
+            Some(&mut self.map_iter),
             &mut self.back_entry,
             |(k, v)| (k.clone(), v.iter_mut()),
         )
@@ -241,6 +248,148 @@ impl<'a, K: Key, V> DoubleEndedIterator for IterMut<'a, K, V> {
 }
 
 impl<'a, K: Key, V> FusedIterator for IterMut<'a, K, V> {}
+
+/// An iterator over a range of `(Key, &Value)` entries
+/// in a [`ContiguousMap`] in ascending key order.
+///
+/// See [`ContiguousMap::range()`].
+pub struct Range<'a, K: Key, V> {
+    front_entry: Option<(K, std::slice::Iter<'a, V>)>,
+    map_iter: Option<btree_map::Range<'a, K, Vec<V>>>,
+    back_entry: Option<(K, std::slice::Iter<'a, V>)>,
+}
+
+impl<'a, K: Key, V> Range<'a, K, V> {
+    pub(crate) fn new(map: &'a ContiguousMap<K, V>, start: Index<K>, end: Index<K>) -> Self {
+        if start.key == end.key {
+            // entire range is one contiguous region
+            let front_key = start.key.add_usize(start.offset).unwrap();
+            let front_slice = &map.map.get(&start.key).unwrap()[start.offset..=end.offset];
+            Self {
+                front_entry: Some((front_key, front_slice.iter())),
+                map_iter: None,
+                back_entry: None,
+            }
+        } else {
+            // range spans multiple contiguous regions
+            let mut range = map.map.range(&start.key..=&end.key);
+            let front_key = start.key.add_usize(start.offset).unwrap();
+            let front_slice = &range.next().unwrap().1[start.offset..];
+            let back_key = end.key;
+            let back_slice = &range.next_back().unwrap().1[..=end.offset];
+            Self {
+                front_entry: Some((front_key, front_slice.iter())),
+                map_iter: Some(range),
+                back_entry: Some((back_key, back_slice.iter())),
+            }
+        }
+    }
+
+    pub(crate) fn new_empty() -> Self {
+        Self {
+            front_entry: None,
+            map_iter: None,
+            back_entry: None,
+        }
+    }
+}
+
+impl<'a, K: Key, V> Iterator for Range<'a, K, V> {
+    type Item = (K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        next_impl(
+            &mut self.front_entry,
+            self.map_iter.as_mut(),
+            &mut self.back_entry,
+            |(k, v)| (k.clone(), v.iter()),
+        )
+    }
+}
+
+impl<'a, K: Key, V> DoubleEndedIterator for Range<'a, K, V> {
+    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
+        next_back_impl(
+            &mut self.front_entry,
+            self.map_iter.as_mut(),
+            &mut self.back_entry,
+            |(k, v)| (k.clone(), v.iter()),
+        )
+    }
+}
+
+impl<'a, K: Key, V> FusedIterator for Range<'a, K, V> {}
+
+/// An iterator over a range of `(Key, &mut Value)` entries
+/// in a [`ContiguousMap`] in ascending key order.
+///
+/// See [`ContiguousMap::range_mut()`].
+pub struct RangeMut<'a, K: Key, V> {
+    front_entry: Option<(K, std::slice::IterMut<'a, V>)>,
+    map_iter: Option<btree_map::RangeMut<'a, K, Vec<V>>>,
+    back_entry: Option<(K, std::slice::IterMut<'a, V>)>,
+}
+
+impl<'a, K: Key, V> RangeMut<'a, K, V> {
+    pub(crate) fn new(map: &'a mut ContiguousMap<K, V>, start: Index<K>, end: Index<K>) -> Self {
+        if start.key == end.key {
+            // entire range is one contiguous region
+            let front_key = start.key.add_usize(start.offset).unwrap();
+            let front_slice = &mut map.map.get_mut(&start.key).unwrap()[start.offset..=end.offset];
+            Self {
+                front_entry: Some((front_key, front_slice.iter_mut())),
+                map_iter: None,
+                back_entry: None,
+            }
+        } else {
+            // range spans multiple contiguous regions
+            let mut range = map.map.range_mut(&start.key..=&end.key);
+            let front_key = start.key.add_usize(start.offset).unwrap();
+            let front_slice = &mut range.next().unwrap().1[start.offset..];
+            let back_key = end.key;
+            let back_slice = &mut range.next_back().unwrap().1[..=end.offset];
+            Self {
+                front_entry: Some((front_key, front_slice.iter_mut())),
+                map_iter: Some(range),
+                back_entry: Some((back_key, back_slice.iter_mut())),
+            }
+        }
+    }
+
+    pub(crate) fn new_empty() -> Self {
+        Self {
+            front_entry: None,
+            map_iter: None,
+            back_entry: None,
+        }
+    }
+}
+
+impl<'a, K: Key, V> Iterator for RangeMut<'a, K, V> {
+    type Item = (K, &'a mut V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        next_impl(
+            &mut self.front_entry,
+            self.map_iter.as_mut(),
+            &mut self.back_entry,
+            |(k, v)| (k.clone(), v.iter_mut()),
+        )
+    }
+}
+
+impl<'a, K: Key, V> DoubleEndedIterator for RangeMut<'a, K, V> {
+    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
+        next_back_impl(
+            &mut self.front_entry,
+            self.map_iter.as_mut(),
+            &mut self.back_entry,
+            |(k, v)| (k.clone(), v.iter_mut()),
+        )
+    }
+}
+
+impl<'a, K: Key, V> FusedIterator for RangeMut<'a, K, V> {}
 
 /// An owning iterator over all the contiguous `(Key, Vec<Value>)` entries
 /// in a [`ContiguousMap`] in ascending key order.
@@ -385,7 +534,7 @@ mod test {
     fn next_impl_empty() {
         let mut front: Option<(u8, std::vec::IntoIter<u8>)> = None;
         let mut back = None;
-        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+        let next = next_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert!(next.is_none());
         front.assert_empty();
@@ -396,7 +545,7 @@ mod test {
     fn next_impl_from_front() {
         let mut front = Some((0, [1, 2].iter().copied()));
         let mut back = None;
-        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+        let next = next_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((0, 1), next.unwrap());
         front.assert_contains_only((1, 2));
@@ -407,7 +556,7 @@ mod test {
     fn next_impl_from_front_back_preserved() {
         let mut front = Some((0, [1, 2].iter().copied()));
         let mut back = Some((10, [20].iter().copied()));
-        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+        let next = next_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((0, 1), next.unwrap());
         front.assert_contains_only((1, 2));
@@ -420,7 +569,7 @@ mod test {
         let mut back = None;
         let next = next_impl(
             &mut front,
-            &mut once((0, [1, 2].iter().copied())),
+            Some(&mut once((0, [1, 2].iter().copied()))),
             &mut back,
             identity,
         );
@@ -436,7 +585,7 @@ mod test {
         let mut back = None;
         let next = next_impl(
             &mut front,
-            &mut once((1, [2, 3].iter().copied())),
+            Some(&mut once((1, [2, 3].iter().copied()))),
             &mut back,
             identity,
         );
@@ -452,7 +601,7 @@ mod test {
         let mut back = Some((10, [20].iter().copied()));
         let next = next_impl(
             &mut front,
-            &mut once((0, [1, 2].iter().copied())),
+            Some(&mut once((0, [1, 2].iter().copied()))),
             &mut back,
             identity,
         );
@@ -466,7 +615,7 @@ mod test {
     fn next_impl_from_back() {
         let mut front = None;
         let mut back = Some((0, [1, 2].iter().copied()));
-        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+        let next = next_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((0, 1), next.unwrap());
         front.assert_contains_only((1, 2));
@@ -477,7 +626,7 @@ mod test {
     fn next_impl_near_overflow() {
         let mut front = Some((u8::MAX, [1].iter().copied()));
         let mut back = None;
-        let next = next_impl(&mut front, &mut empty(), &mut back, identity);
+        let next = next_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((u8::MAX, 1), next.unwrap());
         front.assert_empty();
@@ -488,7 +637,7 @@ mod test {
     fn next_back_impl_empty() {
         let mut front: Option<(u8, std::vec::IntoIter<u8>)> = None;
         let mut back = None;
-        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+        let next_back = next_back_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert!(next_back.is_none());
         front.assert_empty();
@@ -499,7 +648,7 @@ mod test {
     fn next_back_impl_from_front() {
         let mut front = Some((0, [1, 2].iter().copied()));
         let mut back = None;
-        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+        let next_back = next_back_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((1, 2), next_back.unwrap());
         front.assert_empty();
@@ -512,7 +661,7 @@ mod test {
         let mut back = None;
         let next_back = next_back_impl(
             &mut front,
-            &mut once((0, [1, 2].iter().copied())),
+            Some(&mut once((0, [1, 2].iter().copied()))),
             &mut back,
             identity,
         );
@@ -528,7 +677,7 @@ mod test {
         let mut back = Some((10, [].iter().copied()));
         let next_back = next_back_impl(
             &mut front,
-            &mut once((0, [1, 2].iter().copied())),
+            Some(&mut once((0, [1, 2].iter().copied()))),
             &mut back,
             identity,
         );
@@ -544,7 +693,7 @@ mod test {
         let mut back = None;
         let next_back = next_back_impl(
             &mut front,
-            &mut once((5, [6, 7].iter().copied())),
+            Some(&mut once((5, [6, 7].iter().copied()))),
             &mut back,
             identity,
         );
@@ -558,7 +707,7 @@ mod test {
     fn next_back_impl_from_back() {
         let mut front = None;
         let mut back = Some((0, [1, 2].iter().copied()));
-        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+        let next_back = next_back_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((1, 2), next_back.unwrap());
         front.assert_empty();
@@ -569,7 +718,7 @@ mod test {
     fn next_back_impl_from_back_front_preserved() {
         let mut front = Some((0, [1].iter().copied()));
         let mut back = Some((5, [6, 7].iter().copied()));
-        let next_back = next_back_impl(&mut front, &mut empty(), &mut back, identity);
+        let next_back = next_back_impl(&mut front, Some(&mut empty()), &mut back, identity);
 
         assert_eq!((6, 7), next_back.unwrap());
         front.assert_contains_only((0, 1));

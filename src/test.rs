@@ -858,3 +858,115 @@ fn find_more() {
     assert_eq!(Index { key: 5, offset: 1 }, map.find_more(&5).unwrap());
     assert_eq!(None, map.find_more(&100));
 }
+
+#[test]
+fn range_empty() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    let range = map.range(3..5);
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_single_slice() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    let mut range = map.range(5..10);
+    assert_eq!((5, &15), range.next().unwrap());
+    assert_eq!((7, &17), range.next_back().unwrap());
+    assert_eq!((6, &16), range.next().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_multi_slice() {
+    let map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    let mut range = map.range(2..7);
+    assert_eq!((2, &12), range.next().unwrap());
+    assert_eq!((6, &16), range.next_back().unwrap());
+    assert_eq!((5, &15), range.next().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_forward() {
+    let map = cmap!(1 => 11; 3 => 13; 5 => 15);
+    let mut range = map.range(..);
+    assert_eq!((1, &11), range.next().unwrap());
+    assert_eq!((3, &13), range.next().unwrap());
+    assert_eq!((5, &15), range.next().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_backward() {
+    let map = cmap!(1 => 11; 3 => 13; 5 => 15);
+    let mut range = map.range(..);
+    assert_eq!((5, &15), range.next_back().unwrap());
+    assert_eq!((3, &13), range.next_back().unwrap());
+    assert_eq!((1, &11), range.next_back().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_mut_empty() {
+    let mut map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    let range = map.range_mut(3..5);
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_mut_single_slice() {
+    let mut map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    let mut range = map.range_mut(5..10);
+    assert_eq!((5, &mut 15), range.next().unwrap());
+    assert_eq!((7, &mut 17), range.next_back().unwrap());
+    assert_eq!((6, &mut 16), range.next().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_mut_multi_slice() {
+    let mut map = cmap!(
+        1 => 11, 12;
+        5 => 15, 16, 17;
+    );
+    let mut range = map.range_mut(2..7);
+    assert_eq!((2, &mut 12), range.next().unwrap());
+    assert_eq!((6, &mut 16), range.next_back().unwrap());
+    assert_eq!((5, &mut 15), range.next().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_mut_forward() {
+    let mut map = cmap!(1 => 11; 3 => 13; 5 => 15);
+    let mut range = map.range_mut(..);
+    assert_eq!((1, &mut 11), range.next().unwrap());
+    assert_eq!((3, &mut 13), range.next().unwrap());
+    assert_eq!((5, &mut 15), range.next().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
+
+#[test]
+fn range_mut_backward() {
+    let mut map = cmap!(1 => 11; 3 => 13; 5 => 15);
+    let mut range = map.range_mut(..);
+    assert_eq!((5, &mut 15), range.next_back().unwrap());
+    assert_eq!((3, &mut 13), range.next_back().unwrap());
+    assert_eq!((1, &mut 11), range.next_back().unwrap());
+    assert_double_ended_iter_exhausted(range);
+}
