@@ -18,16 +18,16 @@
 macro_rules! cmap {
     ($($key:expr => $($value:expr),+ $(,)?);* $(;)?) => {
         {
-            let mut map = $crate::ContiguousMap::new();
+            let mut _map = $crate::ContiguousMap::new();
             $(
                 let mut _key = Some($key);
                 $(
                     let k = _key.unwrap();
-                    map.insert(k, $value);
+                    _map.insert(k, $value);
                     _key = <_ as $crate::Key>::add_one(&k);
                 )+
             )*
-            map
+            _map
         }
     };
 }
