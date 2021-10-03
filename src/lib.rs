@@ -409,11 +409,18 @@ impl<K: Key, V> ContiguousMap<K, V> {
                 .difference(range.start_bound())?
                 .checked_add(1)?,
         };
-        slice.chunks_exact(length).next()
+        if length == 0 {
+            None
+        } else {
+            slice.chunks_exact(length).next()
+        }
     }
 
     /// Gets a slice from this map using a key and a length.
     pub fn get_slice_with_len<KB: Borrow<K>>(&self, key: KB, len: usize) -> Option<&[V]> {
+        if len == 0 {
+            return None;
+        }
         self.get_slice(key.borrow()..)
             .map(|slice| slice.chunks_exact(len).next())
             .flatten()
@@ -435,7 +442,11 @@ impl<K: Key, V> ContiguousMap<K, V> {
                 .difference(range.start_bound())?
                 .checked_add(1)?,
         };
-        slice.chunks_exact_mut(length).next()
+        if length == 0 {
+            None
+        } else {
+            slice.chunks_exact_mut(length).next()
+        }
     }
 
     /// Gets a mutable slice from this map using a key and a length.
@@ -444,6 +455,9 @@ impl<K: Key, V> ContiguousMap<K, V> {
         key: KB,
         len: usize,
     ) -> Option<&mut [V]> {
+        if len == 0 {
+            return None;
+        }
         self.get_slice_mut(key.borrow()..)
             .map(|slice| slice.chunks_exact_mut(len).next())
             .flatten()
