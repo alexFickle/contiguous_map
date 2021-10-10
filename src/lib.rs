@@ -117,7 +117,12 @@ impl<K: Key, V> ContiguousMap<K, V> {
     /// Gets an index for the largest key that is less than the given key.
     /// Returns None if all keys in the map are greater than or equal to the given key.
     fn find_less(&self, key: &K) -> Option<Index<K>> {
-        self.find_at_most(&key.sub_one()?)
+        let entry = self.map.range(..key).next_back()?;
+        let offset = key.difference(entry.0)?;
+        Some(Index {
+            key: entry.0.clone(),
+            offset: std::cmp::min(offset - 1, entry.1.len() - 1),
+        })
     }
 
     /// Gets an index for the smallest key that is at least the given key.
