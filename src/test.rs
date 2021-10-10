@@ -15,9 +15,11 @@
 /// 4. There are no values with a key outside of the range
 ///   of valid keys.
 ///   For example, a map with a key type of usize and an entry
-////  of usize::MAX => 1, 2 would have a value with a key of
+///   of usize::MAX => 1, 2 would have a value with a key of
 ///   usize::MAX+1.  This is outside the range of the key type
 ///   and therefore the map is invalid.
+/// 5. The internal length equal to the total number of values
+///   in the map.
 #[track_caller]
 fn assert_map_valid<V: std::fmt::Debug>(map: &crate::ContiguousMap<usize, V>) {
     // check invariant 1
@@ -59,6 +61,15 @@ fn assert_map_valid<V: std::fmt::Debug>(map: &crate::ContiguousMap<usize, V>) {
             map.map,
         );
     }
+    // check invariant 5
+    let len: usize = map.map.values().map(|vec| vec.len()).sum();
+    assert!(
+        len == map.length,
+        "Internal ContiguousMap invariant violation: Map's stored length of {} does not match the number of values of {}.\nmap:{:?}",
+        map.length,
+        len,
+        map.map,
+    );
 }
 
 /// Helper function that asserts that a ContiguousMap contains exactly

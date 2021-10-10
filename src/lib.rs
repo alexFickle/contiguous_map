@@ -30,6 +30,7 @@ struct Index<K: Key> {
 /// be accessed as a slice.
 pub struct ContiguousMap<K: Key, V> {
     map: BTreeMap<K, Vec<V>>,
+    length: usize,
 }
 
 impl<K: Key, V> ContiguousMap<K, V> {
@@ -37,6 +38,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
     pub fn new() -> Self {
         Self {
             map: BTreeMap::new(),
+            length: 0,
         }
     }
 
@@ -45,7 +47,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
     /// This is the total number of values in the map, not the number of contiguous regions.
     /// For the number of contiguous regions use [`ContiguousMap::num_contiguous_regions()`]
     pub fn len(&self) -> usize {
-        self.map.values().map(|vec| vec.len()).sum()
+        self.length
     }
 
     /// Gets if this map is empty.
@@ -184,6 +186,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
                                     .extend(append_values);
                             }
                         }
+                        self.length += 1;
                         return None;
                     }
                     Ordering::Greater => {
@@ -202,6 +205,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
             }
         }
         self.map.insert(key, vec);
+        self.length += 1;
         None
     }
 
@@ -242,6 +246,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
                         .remove(key)
                         .expect("removing now empty entry from map that we know exists");
                 }
+                self.length -= 1;
                 Some(value)
             }
             Ordering::Less => {
@@ -257,6 +262,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
                     );
                     let value = entry.1.remove(0);
                     self.map.insert(entry.0, entry.1);
+                    self.length -= 1;
                     Some(value)
                 } else {
                     // split off the tail of the vector, creating a new entry for it
@@ -268,6 +274,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
                         "key has a value for the next adjacent key, this next key must exist",
                     );
                     self.map.insert(tail_key, tail);
+                    self.length -= 1;
                     Some(value)
                 }
             }
@@ -276,7 +283,8 @@ impl<K: Key, V> ContiguousMap<K, V> {
 
     /// Removes all entries from this map.
     pub fn clear(&mut self) {
-        self.map.clear()
+        self.map.clear();
+        self.length = 0;
     }
 
     /// Removes all entries within a range of keys.
@@ -292,10 +300,12 @@ impl<K: Key, V> ContiguousMap<K, V> {
             match (start.offset == 0, end.offset == (vec.len() - 1)) {
                 (true, true) => {
                     // remove entire entry
-                    self.map.remove(&start.key).unwrap();
+                    let removed = self.map.remove(&start.key).unwrap();
+                    self.length -= removed.len();
                 }
                 (false, true) => {
                     // pop off elements from the back of the vec
+                    self.length -= vec.len() - start.offset;
                     vec.truncate(start.offset);
                 }
                 (true, false) => {
@@ -304,6 +314,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
                     // remove the front of the vector that was marked for clearing
                     let num_to_remove = end.offset + 1;
                     vec.rotate_left(num_to_remove);
+                    self.length -= num_to_remove;
                     vec.truncate(vec.len() - num_to_remove);
                     // add the tail back into the map right after the region of clearing
                     self.map.insert(
@@ -315,6 +326,7 @@ impl<K: Key, V> ContiguousMap<K, V> {
                     // split the tail that will be retained off of vec
                     let tail = vec.split_off(end.offset + 1);
                     // remove the interior elements marked for clearing
+                    self.length -= vec.len() - start.offset;
                     vec.truncate(start.offset);
                     // insert the tail back into the map right after the region of clearing
                     self.map.insert(
@@ -329,10 +341,12 @@ impl<K: Key, V> ContiguousMap<K, V> {
             // handle the start region
             if start.offset == 0 {
                 // remove entire entry
-                self.map.remove(&start.key).unwrap();
+                let removed = self.map.remove(&start.key).unwrap();
+                self.length -= removed.len();
             } else {
                 // remove the tail of the entry
                 let vec = self.map.get_mut(&start.key).unwrap();
+                self.length -= vec.len() - start.offset;
                 vec.truncate(start.offset);
             }
 
@@ -343,20 +357,23 @@ impl<K: Key, V> ContiguousMap<K, V> {
                 .next()
             {
                 let key = key.clone();
-                self.map.remove(&key).unwrap();
+                let removed = self.map.remove(&key).unwrap();
+                self.length -= removed.len();
             }
 
             // handle the end region
             let vec = self.map.get(&end.key).unwrap();
             if vec.len() - 1 == end.offset {
                 // remove entire region
-                self.map.remove(&end.key).unwrap();
+                let removed = self.map.remove(&end.key).unwrap();
+                self.length -= removed.len();
             } else {
                 // extract the vec
                 let mut vec = self.map.remove(&end.key).unwrap();
                 // remove the front of the vector that was marked for clearing
                 let num_to_remove = end.offset + 1;
                 vec.rotate_left(num_to_remove);
+                self.length -= num_to_remove;
                 vec.truncate(vec.len() - num_to_remove);
                 // add the tail back into the map right after the region of clearing
                 self.map.insert(
