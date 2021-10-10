@@ -3,3 +3,6 @@ name = "contiguous_map"
 version = "0.1.0"
 authors = ["Alex Fickle <alex.fickle@gmail.com>"]
 edition = "2018"
+
+[dev-dependencies]
+itertools = "0.10"

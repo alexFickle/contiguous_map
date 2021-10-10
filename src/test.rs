@@ -1,11 +1,76 @@
+/// Helper function that asserts that a ContiguousMap is upholding
+/// all required internal invariants.
+///
+/// # Invariants
+/// 1. The map does not contain any empty vectors.
+/// 2. The map contains at most one value for every key.
+///   For example, a map with an entry of 0 => 1, 2, 3
+///   and 2 => 4 would contain two values for the key of 2
+///   and therefore be invalid.
+/// 3. Any entires that may be merged must be merged.
+///   For example, a map containing the entires 0 => 1, 2
+///   and 2 => 3 would be able to represent the same values
+///   with a single merged entry of 0 => 1, 2, 3.
+///   Therefore the map is invalid.
+/// 4. There are no values with a key outside of the range
+///   of valid keys.
+///   For example, a map with a key type of usize and an entry
+////  of usize::MAX => 1, 2 would have a value with a key of
+///   usize::MAX+1.  This is outside the range of the key type
+///   and therefore the map is invalid.
+#[track_caller]
+fn assert_map_valid<V: std::fmt::Debug>(map: &crate::ContiguousMap<usize, V>) {
+    // check invariant 1
+    for (_, vector) in map.map.iter() {
+        assert!(
+            vector.len() != 0,
+            "Internal ContiguousMap invariant violation: Contains an empty vector.\nmap{:?}",
+            map.map,
+        );
+    }
+    // check invariant 4
+    for (key, vector) in map.map.iter() {
+        assert!(
+            key.checked_add(vector.len() - 1).is_some(),
+            "Internal ContiguousMap invariant violation: Entry at key {} overflows the key type.\nmap{:?}",
+            key,
+            map.map,
+        );
+    }
+    // check invariant 2
+    use itertools::Itertools;
+    for ((key, vec), (next_key, _)) in map.map.iter().tuple_windows() {
+        let key_of_last_in_first = key + (vec.len() - 1);
+        assert!(
+            key_of_last_in_first < *next_key,
+            "Internal ContiguousMap invariant violation: Multiple values for key of {}.\nmap:{:?}",
+            next_key,
+            map.map,
+        );
+    }
+    // check invariant 3
+    for ((key, vec), (next_key, _)) in map.map.iter().tuple_windows() {
+        let key_of_last_in_first = key + (vec.len() - 1);
+        assert!(
+            key_of_last_in_first != next_key - 1,
+            "Internal ContiguousMap invariant violation: Map contains mergeable entires with keys {} and {}.\nmap:{:?}",
+            key,
+            next_key,
+            map.map,
+        );
+    }
+}
+
 /// Helper function that asserts that a ContiguousMap contains exactly
 /// the given entries.
 /// The entries must be given in order sorted by their keys.
+/// Also asserts that the map is valid.
 #[track_caller]
 fn assert_map_same<const NUM_ENTRIES: usize>(
     map: &crate::ContiguousMap<usize, i32>,
     entries: [(usize, Vec<i32>); NUM_ENTRIES],
 ) {
+    assert_map_valid(map);
     assert!(
         NUM_ENTRIES == map.map.len(),
         "Expected {} entries in the internal map, not {}.\nmap:{:?}",
