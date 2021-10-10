@@ -10,22 +10,22 @@ fn empty() {
 
 #[test]
 fn start_of_region() {
-    let mut map = cmap!(10 => 0, 1, 2, 3);
-    map.clear_range(10..12);
-    assert_map_same(&map, [(12, vec![2, 3])]);
+    let mut map = cmap!(10 => 0, 1, 2, 3, 4);
+    map.clear_range(10..13);
+    assert_map_same(&map, [(13, vec![3, 4])]);
 }
 
 #[test]
 fn middle_of_region() {
-    let mut map = cmap!(10 => 0, 1, 2, 3);
-    map.clear_range(11..13);
-    assert_map_same(&map, [(10, vec![0]), (13, vec![3])]);
+    let mut map = cmap!(10 => 0, 1, 2, 3, 4);
+    map.clear_range(11..14);
+    assert_map_same(&map, [(10, vec![0]), (14, vec![4])]);
 }
 
 #[test]
 fn end_of_region() {
-    let mut map = cmap!(10 => 0, 1, 2, 3);
-    map.clear_range(12..14);
+    let mut map = cmap!(10 => 0, 1, 2, 3, 4);
+    map.clear_range(12..15);
     assert_map_same(&map, [(10, vec![0, 1])]);
 }
 
@@ -39,11 +39,11 @@ fn entire_region() {
 #[test]
 fn across_regions() {
     let mut map = cmap!(
-        10 => 0, 1, 2, 3;
-        20 => 0, 1, 2, 3;
+        10 => 0, 1, 2, 3, 4;
+        20 => 0, 1, 2, 3, 4;
     );
     map.clear_range(12..22);
-    assert_map_same(&map, [(10, vec![0, 1]), (22, vec![2, 3])]);
+    assert_map_same(&map, [(10, vec![0, 1]), (22, vec![2, 3, 4])]);
 }
 
 #[test]
