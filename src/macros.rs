@@ -23,8 +23,8 @@ macro_rules! cmap {
                 let mut _key = ::std::option::Option::Some($key);
                 $(
                     let k = _key.unwrap();
-                    _map.insert(k, $value);
                     _key = <_ as $crate::Key>::add_one(&k);
+                    _map.insert(k, $value);
                 )+
             )*
             _map

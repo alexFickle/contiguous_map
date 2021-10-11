@@ -83,3 +83,32 @@ fn near_overflow() {
     );
     ::std::assert_eq!(1, map.len());
 }
+
+mod non_copy {
+    use ::contiguous_map::*;
+    use ::std::prelude::v1::*;
+
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct NonCopy(pub u8);
+
+    impl Key for NonCopy {
+        fn add_one(&self) -> Option<Self> {
+            Some(Self(self.0.checked_add(1)?))
+        }
+
+        fn add_usize(&self, num: usize) -> Option<Self> {
+            use ::std::convert::TryInto;
+            Some(Self(self.0.checked_add(num.try_into().ok()?)?))
+        }
+
+        fn difference(&self, smaller: &Self) -> Option<usize> {
+            Some(self.0.checked_sub(smaller.0)? as usize)
+        }
+    }
+}
+
+#[test]
+fn non_copy_key() {
+    let map = ::contiguous_map::cmap!(non_copy::NonCopy(1) => 1, 2, 3);
+    ::std::assert_eq!(&[1, 2, 3], map.get_slice(non_copy::NonCopy(1)..).unwrap());
+}
