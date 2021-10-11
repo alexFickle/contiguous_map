@@ -15,16 +15,7 @@ where
 
     /// Gets the key that is num steps after this key.
     /// Returns None if this overflows the key type.
-    ///
-    /// The default implementation repeatedly calls [`Key::add_one()`].
-    /// A more efficient implementation can be provided.
-    fn add_usize(&self, num: usize) -> Option<Self> {
-        let mut value = self.clone();
-        for _ in 0..num {
-            value = value.add_one()?;
-        }
-        Some(value)
-    }
+    fn add_usize(&self, num: usize) -> Option<Self>;
 }
 
 macro_rules! unsigned_key_impl {
