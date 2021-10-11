@@ -160,12 +160,20 @@ mod test {
 
     #[test]
     fn i8_difference() {
-        assert_eq!(2, (-3i8).difference(&-5).unwrap());
-        assert_eq!(127 as usize, (-1i8).difference(&-128).unwrap());
-        assert_eq!(None, (-3i8).difference(&2));
-        assert_eq!(5, 2i8.difference(&-3).unwrap());
-        assert_eq!(u8::MAX as usize, i8::MAX.difference(&i8::MIN).unwrap());
-        assert_eq!(5, 12i8.difference(&7).unwrap());
+        for i in i8::MIN..=i8::MAX {
+            for j in i8::MIN..=i8::MAX {
+                let difference = i as i16 - j as i16;
+                let usize_difference: Option<usize> = difference.try_into().ok();
+                assert_eq!(
+                    usize_difference,
+                    i.difference(&j),
+                    "i: {}, j: {}, difference: {}",
+                    i,
+                    j,
+                    difference
+                );
+            }
+        }
     }
 
     #[test]
