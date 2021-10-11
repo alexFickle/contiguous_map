@@ -82,6 +82,44 @@ macro_rules! signed_key_impl {
                 };
                 unsigned.try_into().ok()
             }
+
+            fn add_usize(&self, num: usize) -> Option<Self> {
+                if *self >= 0 {
+                    // self non-negative, so num must fit in the signed type for
+                    // the addition to possibly not overflow.
+                    // Therefore can do the addition in the singed type
+                    self.checked_add(num.try_into().ok()?)
+                } else {
+                    // self negative, num must only fit in the unsigned version of
+                    // the signed type for the addition to possibly not overflow
+                    let negated_self = self.unsigned_abs();
+                    let num = num.try_into().ok()?;
+                    if negated_self <= num {
+                        // self is negative and has smaller than or equal magnitude to num,
+                        // the result of the addition will be non-negative
+                        (num - negated_self).try_into().ok()
+                    } else {
+                        // self is negative and has larger magnitude than num,
+                        // the result of the addition will be negative.
+                        // Additionally since the result of the addition is negative and
+                        // self fit in the signed type the result will always fit in the signed
+                        // type.
+                        let negated_result = (negated_self - num);
+                        if num == 0 {
+                            // Just because the result will fit in the signed type does not
+                            // mean that the negated_result will fit in the signed type.
+                            // For 2's complement integers (which rust uses) this happens only
+                            // if the result will be the minimum value of the signed type.
+                            // This is only possible of num was zero which leads to a trivial
+                            // sum of self.
+                            Some(*self)
+                        } else {
+                            // Negation can be done in the signed type thanks to checks.
+                            Some(0 - negated_result as Self)
+                        }
+                    }
+                }
+            }
         }
     };
 }
@@ -157,9 +195,19 @@ mod test {
 
     #[test]
     fn i8_add_usize() {
-        assert_eq!(-3, (-5i8).add_usize(2).unwrap());
-        assert_eq!(127, (-128i8).add_usize(255).unwrap());
-        assert_eq!(None, (-127i8).add_usize(255));
-        assert_eq!(None, (-128i8).add_usize(256));
+        for i in i8::MIN..=i8::MAX {
+            for num in 0..=256 {
+                let sum = i as i16 + num as i16;
+                let i8_sum: Option<i8> = sum.try_into().ok();
+                assert_eq!(
+                    i8_sum,
+                    i.add_usize(num),
+                    "i: {}, num: {}, sum (as i16): {}",
+                    i,
+                    num,
+                    sum
+                );
+            }
+        }
     }
 }
