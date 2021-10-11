@@ -1,6 +1,11 @@
 use std::convert::TryInto;
 
-/// Trait that must be implemented for all key types used in a [`ContiguousMap`](crate::ContiguousMap).
+/// Trait that must be implemented for all key types
+/// used in a [`ContiguousMap`](crate::ContiguousMap).
+///
+/// See the blanket implementation for an alternative way of
+/// implementing this trait using the [`ToIndex`] and [`TryFromIndex`]
+/// traits.
 pub trait Key
 where
     Self: Sized + Clone + Ord + Eq,
@@ -16,6 +21,99 @@ where
     /// Gets the key that is num steps after this key.
     /// Returns None if this overflows the key type.
     fn add_usize(&self, num: usize) -> Option<Self>;
+}
+
+/// Trait to convert a type to an index that implements the [`Key`] trait.
+///
+/// This can be implemented in combination with [`TryFromIndex`] to
+/// enable a blanket implementation of the [`Key`] trait.
+pub trait ToIndex {
+    /// The key type used as an index for this type.
+    type Index: Key;
+
+    /// Converts self to an index.
+    fn to_index(&self) -> Self::Index;
+}
+
+/// Trait to convert an index that implements the [`Key`] trait
+/// to a different type.
+///
+/// This can be implemented in combination with [`ToIndex`] to
+/// enable a blanket implementation of the [`Key`] trait.
+pub trait TryFromIndex: ToIndex
+where
+    Self: Sized,
+{
+    /// Attempts to convert from an index to this type.
+    fn try_from_index(index: Self::Index) -> Option<Self>;
+}
+
+/// Blanket implementation of the [`Key`] trait for any type that implements
+/// [`ToIndex`], [`TryFromIndex`], and the basic trait requirements of [`Key`].
+///
+/// Self and it's index type must have the same ordering relationship.
+/// This means that `x.cmp(&y)` must always be equivalent to
+/// `x.to_index().cmp(&y.to_index())`.
+///
+/// All indexes for a type must be a contiguous group of the values of the index
+/// type.  There is no requirement for what values this contiguous group starts
+/// and stops at.
+///
+/// # Example
+/// ```
+/// use contiguous_map::cmap;
+///
+/// #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+/// enum MyKey {
+///     One = 1,
+///     Two = 2,
+///     Three = 3,
+/// }
+///
+/// impl contiguous_map::ToIndex for MyKey {
+///     type Index = u8;
+///     fn to_index(&self) -> Self::Index {
+///         *self as Self::Index
+///     }
+/// }
+///
+/// impl contiguous_map::TryFromIndex for MyKey {
+///     fn try_from_index(index: Self::Index) -> Option<Self> {
+///         match index {
+///             1 => Some(Self::One),
+///             2 => Some(Self::Two),
+///             3 => Some(Self::Three),
+///             _ => None
+///         }
+///     }
+/// }
+///
+/// let map = cmap!(MyKey::One => 10, 12);
+/// assert_eq!(Some(&10), map.get(MyKey::One));
+/// assert_eq!(Some(&12), map.get(MyKey::Two));
+/// assert_eq!(None, map.get(MyKey::Three));
+/// ```
+impl<T, I: Key> Key for T
+where
+    Self: Sized + Clone + Ord + Eq + ToIndex<Index = I> + TryFromIndex,
+{
+    fn add_one(&self) -> Option<Self> {
+        self.to_index()
+            .add_one()
+            .map(Self::try_from_index)
+            .flatten()
+    }
+
+    fn difference(&self, smaller: &Self) -> Option<usize> {
+        self.to_index().difference(&smaller.to_index())
+    }
+
+    fn add_usize(&self, num: usize) -> Option<Self> {
+        self.to_index()
+            .add_usize(num)
+            .map(Self::try_from_index)
+            .flatten()
+    }
 }
 
 macro_rules! unsigned_key_impl {
@@ -208,5 +306,72 @@ mod test {
                 );
             }
         }
+    }
+
+    // test type that uses ToIndex and TryFromIndex to implement Key
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    struct LessThan100(u8);
+
+    impl LessThan100 {
+        fn new(val: u8) -> Option<Self> {
+            if val < 100 {
+                Some(Self(val))
+            } else {
+                None
+            }
+        }
+    }
+
+    impl ToIndex for LessThan100 {
+        type Index = u8;
+        fn to_index(&self) -> Self::Index {
+            self.0
+        }
+    }
+
+    impl TryFromIndex for LessThan100 {
+        fn try_from_index(val: Self::Index) -> Option<Self> {
+            Self::new(val)
+        }
+    }
+
+    #[test]
+    fn bounded_u8_add_one() {
+        assert_eq!(
+            LessThan100::new(1).unwrap(),
+            LessThan100::new(0).unwrap().add_one().unwrap()
+        );
+        assert_eq!(
+            LessThan100::new(99).unwrap(),
+            LessThan100::new(98).unwrap().add_one().unwrap()
+        );
+        assert_eq!(None, LessThan100::new(99).unwrap().add_one());
+    }
+
+    #[test]
+    fn bounded_u8_difference() {
+        assert_eq!(
+            10,
+            LessThan100::new(30)
+                .unwrap()
+                .difference(&LessThan100::new(20).unwrap())
+                .unwrap()
+        );
+        assert_eq!(
+            None,
+            LessThan100::new(10)
+                .unwrap()
+                .difference(&LessThan100::new(11).unwrap())
+        );
+    }
+
+    #[test]
+    fn bounded_u8_add_usize() {
+        assert_eq!(
+            LessThan100::new(30).unwrap(),
+            LessThan100::new(10).unwrap().add_usize(20).unwrap()
+        );
+        assert_eq!(None, LessThan100::new(1).unwrap().add_usize(255));
+        assert_eq!(None, LessThan100::new(1).unwrap().add_usize(99));
     }
 }

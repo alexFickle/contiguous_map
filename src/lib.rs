@@ -14,7 +14,7 @@ mod macros;
 mod iter;
 pub use iter::{IntoIter, Iter, IterMut, IterSlice, IterSliceMut, IterVec, Range, RangeMut};
 mod key;
-pub use key::Key;
+pub use key::{Key, ToIndex, TryFromIndex};
 mod range_bounds;
 pub use range_bounds::InclusiveStartRangeBounds;
 
