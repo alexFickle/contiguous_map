@@ -144,81 +144,29 @@ unsigned_key_impl!(u128);
 unsigned_key_impl!(usize);
 
 macro_rules! signed_key_impl {
-    ($type:ty) => {
-        impl Key for $type {
-            fn add_one(&self) -> Option<Self> {
-                self.checked_add(1)
-            }
+    ($type:ty, $unsigned:ty) => {
+        impl ToIndex for $type {
+            type Index = $unsigned;
 
-            fn difference(&self, smaller: &Self) -> Option<usize> {
-                let unsigned = match (*self < 0, *smaller < 0) {
-                    (true, true) => {
-                        // both negative
-                        smaller.unsigned_abs().checked_sub(self.unsigned_abs())?
-                    }
-                    (true, false) => {
-                        // self negative, smaller positive, so self < smaller.
-                        return None;
-                    }
-                    (false, true) => {
-                        // self positive, smaller negative
-                        self.unsigned_abs().checked_add(smaller.unsigned_abs())?
-                    }
-                    (false, false) => {
-                        // both positive
-                        self.unsigned_abs().checked_sub(smaller.unsigned_abs())?
-                    }
-                };
-                unsigned.try_into().ok()
+            fn to_index(&self) -> Self::Index {
+                (*self as Self::Index).wrapping_add(Self::MAX as Self::Index + 1)
             }
+        }
 
-            fn add_usize(&self, num: usize) -> Option<Self> {
-                if *self >= 0 {
-                    // self non-negative, so num must fit in the signed type for
-                    // the addition to possibly not overflow.
-                    // Therefore can do the addition in the singed type
-                    self.checked_add(num.try_into().ok()?)
-                } else {
-                    // self negative, num must only fit in the unsigned version of
-                    // the signed type for the addition to possibly not overflow
-                    let negated_self = self.unsigned_abs();
-                    let num = num.try_into().ok()?;
-                    if negated_self <= num {
-                        // self is negative and has smaller than or equal magnitude to num,
-                        // the result of the addition will be non-negative
-                        (num - negated_self).try_into().ok()
-                    } else {
-                        // self is negative and has larger magnitude than num,
-                        // the result of the addition will be negative.
-                        // Additionally since the result of the addition is negative and
-                        // self fit in the signed type the result will always fit in the signed
-                        // type.
-                        let negated_result = (negated_self - num);
-                        if num == 0 {
-                            // Just because the result will fit in the signed type does not
-                            // mean that the negated_result will fit in the signed type.
-                            // For 2's complement integers (which rust uses) this happens only
-                            // if the result will be the minimum value of the signed type.
-                            // This is only possible of num was zero which leads to a trivial
-                            // sum of self.
-                            Some(*self)
-                        } else {
-                            // Negation can be done in the signed type thanks to checks.
-                            Some(0 - negated_result as Self)
-                        }
-                    }
-                }
+        impl TryFromIndex for $type {
+            fn try_from_index(index: Self::Index) -> Option<Self> {
+                Some(index.wrapping_sub(Self::MAX as Self::Index + 1) as Self)
             }
         }
     };
 }
 
-signed_key_impl!(i8);
-signed_key_impl!(i16);
-signed_key_impl!(i32);
-signed_key_impl!(i64);
-signed_key_impl!(i128);
-signed_key_impl!(isize);
+signed_key_impl!(i8, u8);
+signed_key_impl!(i16, u16);
+signed_key_impl!(i32, u32);
+signed_key_impl!(i64, u64);
+signed_key_impl!(i128, u128);
+signed_key_impl!(isize, usize);
 
 #[cfg(test)]
 mod test {
@@ -373,5 +321,26 @@ mod test {
         );
         assert_eq!(None, LessThan100::new(1).unwrap().add_usize(255));
         assert_eq!(None, LessThan100::new(1).unwrap().add_usize(99));
+    }
+
+    #[test]
+    fn i8_index_traits() {
+        let mut prev_i8_index = None;
+        for i in i8::MIN..=i8::MAX {
+            // to_index -> try_from_index must round trip unchanged
+            let index = i.to_index();
+            assert_eq!(
+                Some(i),
+                i8::try_from_index(index),
+                "i = {}, index = {}",
+                i,
+                index
+            );
+            if let Some((prev_i8, prev_index)) = prev_i8_index {
+                // adjacent indexes must be adjacent and in the same order
+                assert_eq!(prev_index + 1, index, "prev_i8 = {}, i = {}", prev_i8, i);
+            }
+            prev_i8_index = Some((i, index));
+        }
     }
 }
