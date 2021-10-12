@@ -168,6 +168,34 @@ signed_key_impl!(i64, u64);
 signed_key_impl!(i128, u128);
 signed_key_impl!(isize, usize);
 
+impl ToIndex for char {
+    type Index = u32;
+
+    fn to_index(&self) -> Self::Index {
+        let scalar_value: u32 = (*self).into();
+        // utf-8 scalar values skip 0xD800..0xE000 as those values
+        // are reserved for utf-16 surrogates.
+        // To create a contiguous index move chars above
+        // the gap down by the size of the gap.
+        if scalar_value > 0xD7FF {
+            scalar_value - 0x800
+        } else {
+            scalar_value
+        }
+    }
+}
+
+impl TryFromIndex for char {
+    fn try_from_index(index: Self::Index) -> Option<Self> {
+        let scalar_value = if index > 0xD7FF {
+            index.checked_add(0x800)?
+        } else {
+            index
+        };
+        char::from_u32(scalar_value)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -342,5 +370,36 @@ mod test {
             }
             prev_i8_index = Some((i, index));
         }
+    }
+
+    #[test]
+    fn char_index_traits() {
+        let mut prev_u32_index = None;
+        for i in 0..0x110000 {
+            if let Some(c) = char::from_u32(i) {
+                // to_index -> try_from_index must round trip unchanged
+                let index = c.to_index();
+                assert_eq!(
+                    Some(c),
+                    char::try_from_index(index),
+                    "c as u32 = {}, index = {}",
+                    i,
+                    index
+                );
+                if let Some((prev_u32, prev_index)) = prev_u32_index {
+                    // adjacent indexes must be adjacent and in the same order
+                    assert_eq!(
+                        prev_index + 1,
+                        index,
+                        "prev_char as u32 = {}, c as u32 = {}",
+                        prev_u32,
+                        i
+                    );
+                }
+                prev_u32_index = Some((i, index));
+            }
+        }
+        let out_of_bounds_index = prev_u32_index.unwrap().1 + 1;
+        assert_eq!(None, char::try_from_index(out_of_bounds_index));
     }
 }
