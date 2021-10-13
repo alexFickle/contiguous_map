@@ -126,6 +126,7 @@ fn assert_de_iter_empty<I: std::iter::FusedIterator + DoubleEndedIterator>(mut i
 mod clear;
 mod clear_range;
 mod clear_with_len;
+mod clone;
 mod debug;
 mod default;
 mod find;
