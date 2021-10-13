@@ -28,7 +28,7 @@ struct Index<K: Key> {
 /// An ordered, associative container like [`std::collections::BTreeMap`].
 /// Additionally stores values with adjacent keys contiguously so they may
 /// be accessed as a slice.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContiguousMap<K: Key, V> {
     map: BTreeMap<K, Vec<V>>,
     length: usize,
