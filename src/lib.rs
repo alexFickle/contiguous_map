@@ -1,5 +1,4 @@
-//! Contains [`ContiguousMap`]: a map that stores values with adjacent keys contiguously
-//! so they may be accessed as a slice.
+#![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
 use std::{
